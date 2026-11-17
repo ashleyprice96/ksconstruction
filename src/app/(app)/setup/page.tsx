@@ -6,7 +6,8 @@ import { NotNamedUser } from "@/lib/commercial";
 import { fulfilResetRequest } from "@/lib/passwords";
 import { q, tx } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { changeLogin, createUser, importEligibility, resetPassword, setUserActive, AdminError } from "@/lib/admin";
+import { changeLogin, createUser, importEligibility, resetPassword, setUserActive, addSiteRate, addSiteLiftValue, AdminError } from "@/lib/admin";
+import { publishSafetyAlert, safetyRoster, setSafetyAlertActive, SafetyError } from "@/lib/safety";
 import { back, safeMessage, str } from "@/lib/forms";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { gbp } from "@/lib/money";
@@ -21,7 +22,7 @@ async function runAct(section: string, f: FormData, fn: (user: User) => Promise<
   try { msg = await fn(user); }
   catch (e) {
     const pgUnique = e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505";
-    back(`${P}?s=${section}`, "error", pgUnique ? "That already exists." : safeMessage(e, [AdminError, MarginAccessError, NotNamedUser]));
+    back(`${P}?s=${section}`, "error", pgUnique ? "That already exists." : safeMessage(e, [AdminError, MarginAccessError, NotNamedUser, SafetyError]));
   }
   back(`${P}?s=${section}`, "ok", msg);
 }
@@ -100,6 +101,21 @@ async function updateSite(f: FormData) {
   await audit(u.id, "site", str(f, "site_id"), "updated");
   return "Site updated.";
 });
+}
+
+async function saveSiteRate(f: FormData) {
+  "use server";
+  await runAct("sites", f, async (u) => {
+    await addSiteRate(u, str(f, "site_id"), str(f, "item_id"), Number(str(f, "rate")), str(f, "effective_from"));
+    return "Site rate saved.";
+  });
+}
+async function saveSiteLift(f: FormData) {
+  "use server";
+  await runAct("sites", f, async (u) => {
+    await addSiteLiftValue(u, str(f, "site_id"), str(f, "lift_id"), Number(str(f, "gang_value")), str(f, "effective_from"));
+    return "Site lift price saved.";
+  });
 }
 
 async function addJob(f: FormData) {
@@ -273,7 +289,29 @@ async function saveSettings(f: FormData) {
 });
 }
 
-const TABS = { sites: "Sites and plots", gangs: "Gangs and payees", users: "Users", settings: "Settings", margin: "Margin access" } as const;
+async function publishAlert(f: FormData) {
+  "use server";
+  await runAct("safety", f, async (u) => {
+    const file = f.get("attachment");
+    await publishSafetyAlert(u, {
+      title: str(f, "title"),
+      body: str(f, "body"),
+      active: f.get("active") === "on",
+      file: file instanceof File ? file : null,
+    });
+    return "Health and safety alert published. Gang leads must confirm it before they can continue.";
+  });
+}
+async function toggleAlert(f: FormData) {
+  "use server";
+  await runAct("safety", f, async (u) => {
+    const on = f.get("make_active") === "1";
+    await setSafetyAlertActive(u, str(f, "alert_id"), on);
+    return on ? "Alert is active. Anyone who has not confirmed it is blocked." : "Alert turned off. It no longer blocks anyone.";
+  });
+}
+
+const TABS = { sites: "Sites and plots", gangs: "Gangs and payees", users: "Users", safety: "Health and safety", settings: "Settings", margin: "Margin access" } as const;
 
 export default async function Setup({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const user = await requireUser(["management", "admin"]);
@@ -290,6 +328,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       {s === "sites" && <SitesTab />}
       {s === "gangs" && <GangsTab />}
       {s === "users" && <UsersTab user={user} />}
+      {s === "safety" && <SafetyTab />}
       {s === "settings" && <SettingsTab />}
       {s === "margin" && namedAdmin && <MarginTab actor={user} />}
     </>
@@ -302,7 +341,7 @@ async function q1count() {
 }
 
 async function SitesTab() {
-  const [clients, hbs, sites, jobs, hts, lifts] = await Promise.all([
+  const [clients, hbs, sites, jobs, hts, lifts, items] = await Promise.all([
     q<{ id: string; name: string; invoice_frequency_weeks: number; uses_own_forms: boolean }>("SELECT id, name, invoice_frequency_weeks, uses_own_forms FROM ops.clients ORDER BY name"),
     q<{ id: string; name: string }>("SELECT id, name FROM ops.housebuilders ORDER BY name"),
     q<{ id: string; name: string; client_id: string | null; housebuilder_id: string | null; active: boolean; region: string; jobs: string; plots: string }>(
@@ -317,6 +356,7 @@ async function SitesTab() {
          (SELECT gang_value::text FROM ops.lift_values v WHERE v.lift_id = l.id AND v.effective_from <= current_date ORDER BY effective_from DESC LIMIT 1) AS gang_value,
          (SELECT to_char(effective_from, 'YYYY-MM-DD') FROM ops.lift_values v WHERE v.lift_id = l.id AND v.effective_from <= current_date ORDER BY effective_from DESC LIMIT 1) AS effective_from
        FROM ops.lifts l JOIN ops.house_types h ON h.id = l.house_type_id ORDER BY h.name, l.sort`),
+    q<{ id: string; name: string; unit: string }>("SELECT id, name, unit FROM ops.rate_items WHERE active ORDER BY claim_type, sort, name"),
   ]);
   return (
     <>
@@ -364,6 +404,26 @@ async function SitesTab() {
           <div><label htmlFor="ap_ht">House type</label><select id="ap_ht" name="house_type_id"><option value="">Not set</option>{hts.map((h) => <option key={h.id} value={h.id}>{h.name}{h.site ? ` (${h.site})` : ""}</option>)}</select></div>
           <div><label htmlFor="ap_plots">Plot numbers<span className="hint">Ranges and lists, for example 1-20, 25, 30A</span></label><input id="ap_plots" name="plots" type="text" required /></div>
           <button className="btn secondary" type="submit">Add plots</button></form>
+        <form action={saveSiteRate} className="card stack" style={{ gridColumn: "1 / -1" }}><h3 style={{ marginTop: 0 }}>Site rate card</h3>
+          <p className="small muted">Gang pay rates for a site. Any gang lead can claim here and is paid from this card, unless that gang has an override. North sites can be priced higher, for example £10 more per 1,000 on commons and facings. This is not the client charge rate.</p>
+          <div className="row">
+            <div><label htmlFor="sr_site">Site</label><select id="sr_site" name="site_id" required>{sites.map((x) => <option key={x.id} value={x.id}>{x.name}{x.region ? ` · ${x.region}` : ""}</option>)}</select></div>
+            <div><label htmlFor="sr_item">Item</label><select id="sr_item" name="item_id" required>{items.map((i) => <option key={i.id} value={i.id}>{i.name} (per {i.unit})</option>)}</select></div>
+            <div><label htmlFor="sr_rate">Gang rate (£)</label><input id="sr_rate" name="rate" type="number" min="0" step="0.0001" required /></div>
+            <div><label htmlFor="sr_from">Effective from</label><input id="sr_from" name="effective_from" type="date" required /></div>
+          </div>
+          <button className="btn" type="submit">Save site rate</button>
+        </form>
+        <form action={saveSiteLift} className="card stack"><h3 style={{ marginTop: 0 }}>Site lift price</h3>
+          <p className="small muted">Optional. When set, this gang price is used for that lift on this site instead of the house-type price.</p>
+          <div className="row">
+            <div><label htmlFor="sl_site">Site</label><select id="sl_site" name="site_id" required>{sites.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+            <div><label htmlFor="sl_lift">Lift</label><select id="sl_lift" name="lift_id" required>{lifts.map((l) => <option key={l.id} value={l.id}>{l.house_type}: {l.name}</option>)}</select></div>
+            <div><label htmlFor="sl_value">Gang price (£)</label><input id="sl_value" name="gang_value" type="number" min="0" step="0.01" required /></div>
+            <div><label htmlFor="sl_from">Effective from</label><input id="sl_from" name="effective_from" type="date" required /></div>
+          </div>
+          <button className="btn secondary" type="submit">Save lift price</button>
+        </form>
       </div>
 
       <h2>House types, lifts and patch (gang values)</h2>
@@ -588,6 +648,57 @@ async function MarginTab({ actor }: { actor: User }) {
           <tr key={i}><td>{fmtDateTime(h.at)}</td><td>{h.name}</td><td>{h.action}</td><td>{h.changed_by}</td><td>{h.reason}</td></tr>
         ))}</tbody>
       </table></div>
+    </>
+  );
+}
+
+async function SafetyTab() {
+  const alerts = await safetyRoster();
+  return (
+    <>
+      <form action={publishAlert} className="card stack">
+        <h2 style={{ marginTop: 0 }}>Publish a health and safety alert</h2>
+        <p className="small muted">Gang leads cannot use the app until they confirm every active alert. A new alert blocks them again, including people who confirmed an earlier one.</p>
+        <div><label htmlFor="hs_title">Title</label><input id="hs_title" name="title" type="text" required maxLength={200} /></div>
+        <div><label htmlFor="hs_body">Alert</label><textarea id="hs_body" name="body" required maxLength={10000} /></div>
+        <div><label htmlFor="hs_file">Attachment (optional PDF or image)</label><input id="hs_file" name="attachment" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" /></div>
+        <label className="check"><input type="checkbox" name="active" defaultChecked /> Active — gang leads must confirm this before they can continue</label>
+        <button className="btn" type="submit">Publish alert</button>
+      </form>
+      <div data-testid="hs-ack-list">
+        {alerts.length === 0 && <p className="muted">No health and safety alerts yet.</p>}
+        {alerts.map((a) => (
+          <div key={a.id} className="card">
+            <div className="split">
+              <div>
+                <div className="eyebrow">{fmtDateTime(a.published_at)}{a.attachment_name ? ` · ${a.attachment_name}` : ""}</div>
+                <h3 style={{ margin: "4px 0" }}>{a.title}</h3>
+              </div>
+              <span className={`badge ${a.active ? "submitted" : "draft"}`}>{a.active ? "Active" : "Off"}</span>
+            </div>
+            <p style={{ whiteSpace: "pre-line" }}>{a.body}</p>
+            <div className="table-wrap dense">
+              <table>
+                <thead><tr><th>Gang lead</th><th>Confirmed</th><th>When</th></tr></thead>
+                <tbody>
+                  {a.people.map((p) => (
+                    <tr key={p.name}>
+                      <td>{p.name}</td>
+                      <td>{p.acknowledged_at ? <span className="badge approved">Confirmed</span> : <span className="badge flagged">Not yet</span>}</td>
+                      <td>{p.acknowledged_at ? fmtDateTime(p.acknowledged_at) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <form action={toggleAlert} style={{ marginTop: 12 }}>
+              <input type="hidden" name="alert_id" value={a.id} />
+              <input type="hidden" name="make_active" value={a.active ? "0" : "1"} />
+              <button className="btn ghost small" type="submit">{a.active ? "Turn off" : "Turn on"}</button>
+            </form>
+          </div>
+        ))}
+      </div>
     </>
   );
 }

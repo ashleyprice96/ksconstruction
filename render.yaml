@@ -17,6 +17,8 @@ services:
     runtime: node
     region: frankfurt
     plan: free
+    # Free instances have no persistent disk. Scanned top sheets are stored in
+    # Postgres (ops.attachments.content). Work photos still use the local disk.
     buildCommand: npm ci && npm run build
     startCommand: npm run start:hosted
     envVars:

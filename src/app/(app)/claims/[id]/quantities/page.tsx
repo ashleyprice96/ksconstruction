@@ -5,8 +5,10 @@ import { loadClaim, saveQuantities, ClaimError } from "@/lib/claims";
 import { claimContext, TYPE_LABEL } from "@/lib/lookups";
 import { back, safeMessage, str } from "@/lib/forms";
 import { settings } from "@/lib/settings";
-import ClaimSteps from "@/components/ClaimSteps";
+import { gangRateCard } from "@/lib/rates";
+import { gbpRate } from "@/lib/money";
 import Flash from "@/components/Flash";
+import ClaimSteps from "@/components/ClaimSteps";
 
 const WALL_ROWS = 8;
 
@@ -71,7 +73,8 @@ export default async function Quantities({ params, searchParams }: { params: Pro
          WHERE a.site_id = $1 AND p.gang_id = $2 AND a.start_date <= $3 AND (a.end_date IS NULL OR a.end_date >= $3)`,
         [c.site_id, c.gang_id, c.work_date])
     : [];
-  const wallRows = Math.max(WALL_ROWS, walls.length + 2);
+  const card = user.gang_id ? await gangRateCard(user.gang_id, c.work_date) : [];
+  const itemRate = (itemId: string) => card.find((r) => r.site_id === c.site_id && r.item_id === itemId);
 
   return (
     <>
@@ -85,20 +88,23 @@ export default async function Quantities({ params, searchParams }: { params: Pro
         {items.length > 0 && (
           <div className="card accent">
             <h2 style={{ marginTop: 0 }}>Quantities</h2>
-            <p className="muted small">Enter quantities only. The app works out every total. Rates are shown at the final step.</p>
-            {items.map((i) => (
+            <p className="muted small">Enter quantities only. The rate is the gang pay rate for this site. The app works out every total.</p>
+            {items.map((i) => {
+              const priced = itemRate(i.id);
+              return (
               <div key={i.id} className="split-row">
-                <label htmlFor={`item_${i.id}`} style={{ margin: 0 }}>{i.name}<span className="hint">{i.unit}</span></label>
+                <label htmlFor={`item_${i.id}`} style={{ margin: 0 }}>{i.name}<span className="hint">{i.unit}{priced ? ` · ${gbpRate(priced.rate)} (${priced.source})` : ""}</span></label>
                 <input id={`item_${i.id}`} name={`item_${i.id}`} type="number" inputMode="decimal" min="0" step="any" defaultValue={qty("item_id", i.id)} />
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {c.claim_type === "substructure" && (
           <div className="card">
             <h2 style={{ marginTop: 0 }}>Courses per wall</h2>
             <p className="muted small">Foundation depth varies. Record the number of courses for each wall, using the wall references on the foundation drawing you upload next.</p>
-            {Array.from({ length: wallRows }, (_, i) => (
+            {Array.from({ length: WALL_ROWS }, (_, i) => (
               <div key={i} className="wallrow">
                 <div><label htmlFor={`wall_ref_${i}`} className="small">Wall reference</label>
                   <input id={`wall_ref_${i}`} name={`wall_ref_${i}`} type="text" maxLength={40} placeholder={i === 0 ? "For example: Front A" : ""} defaultValue={walls[i]?.wall_ref ?? ""} /></div>

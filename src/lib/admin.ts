@@ -125,3 +125,30 @@ export async function changeLogin(user: User, userId: string, emailRaw: string, 
   await q("UPDATE ops.users SET email = $2, username = $3, name = $4 WHERE id = $1", [userId, email, username, name.trim()]);
   await audit(user.id, "user", userId, "login_changed", { email, username });
 }
+
+export async function addSiteRate(user: User, siteId: string, itemId: string, rate: number, effectiveFrom: string) {
+  assertManager(user);
+  if (!siteId || !itemId || !(rate >= 0) || !isoOk(effectiveFrom)) throw new AdminError("Enter the site, item, rate and date.");
+  await q(`INSERT INTO ops.site_rates (site_id, item_id, rate, effective_from, created_by) VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (site_id, item_id, effective_from) DO UPDATE SET rate = EXCLUDED.rate, created_by = EXCLUDED.created_by`,
+    [siteId, itemId, rate, effectiveFrom, user.id]);
+  await audit(user.id, "site", siteId, "site_rate_set", { itemId, rate, effectiveFrom });
+}
+
+export async function addSiteLiftValue(user: User, siteId: string, liftId: string, value: number, effectiveFrom: string) {
+  assertManager(user);
+  if (!siteId || !liftId || !(value >= 0) || !isoOk(effectiveFrom)) throw new AdminError("Enter the site, lift, price and date.");
+  await q(`INSERT INTO ops.site_lift_values (site_id, lift_id, gang_value, effective_from, created_by) VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (site_id, lift_id, effective_from) DO UPDATE SET gang_value = EXCLUDED.gang_value, created_by = EXCLUDED.created_by`,
+    [siteId, liftId, value, effectiveFrom, user.id]);
+  await audit(user.id, "site", siteId, "site_lift_set", { liftId, value, effectiveFrom });
+}
+
+export async function addGangSiteRate(user: User, gangId: string, siteId: string, itemId: string, rate: number, effectiveFrom: string) {
+  assertManager(user);
+  if (!gangId || !siteId || !itemId || !(rate >= 0) || !isoOk(effectiveFrom)) throw new AdminError("Enter the gang, site, item, rate and date.");
+  await q(`INSERT INTO ops.gang_site_rates (gang_id, site_id, item_id, rate, effective_from, created_by) VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (gang_id, site_id, item_id, effective_from) DO UPDATE SET rate = EXCLUDED.rate, created_by = EXCLUDED.created_by`,
+    [gangId, siteId, itemId, rate, effectiveFrom, user.id]);
+  await audit(user.id, "gang", gangId, "site_override_set", { siteId, itemId, rate, effectiveFrom });
+}

@@ -1,13 +1,15 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { q, q1 } from "@/lib/db";
-import { addAttachment, loadClaim, removeAttachment, ClaimError } from "@/lib/claims";
+import { addAttachment, addTopSheets, loadClaim, removeAttachment, ClaimError } from "@/lib/claims";
+import { listTopSheets } from "@/lib/attachments";
 import { claimContext, TYPE_LABEL } from "@/lib/lookups";
 import { back, safeMessage, str } from "@/lib/forms";
 import { settings } from "@/lib/settings";
 import ClaimSteps from "@/components/ClaimSteps";
 import Flash from "@/components/Flash";
 import ImageInput from "@/components/ImageInput";
+import TopSheetScanner from "@/components/TopSheetScanner";
 
 async function upload(f: FormData) {
   "use server";
@@ -22,6 +24,16 @@ async function upload(f: FormData) {
     back(`/claims/${id}/evidence`, "error", safeMessage(e, [ClaimError]));
   }
   back(`/claims/${id}/evidence`, "ok", `${files.length} file${files.length > 1 ? "s" : ""} uploaded.`);
+}
+
+async function saveTopSheet(f: FormData) {
+  "use server";
+  const user = await requireUser(["gang"]);
+  const id = str(f, "claim_id");
+  const files = f.getAll("pages").filter((x): x is File => x instanceof File && x.size > 0);
+  try { await addTopSheets(user, id, files); }
+  catch (e) { back(`/claims/${id}/evidence`, "error", safeMessage(e, [ClaimError])); }
+  back(`/claims/${id}/evidence`, "ok", "Top sheet saved.");
 }
 
 async function remove(f: FormData) {
@@ -46,7 +58,8 @@ export default async function Evidence({ params, searchParams }: { params: Promi
   const [minPhotos, sig] = await Promise.all([settings.minPhotos(), settings.signatureRequired()]);
   const client = await q1<{ uses_own_forms: boolean }>("SELECT uses_own_forms FROM ops.clients WHERE id = $1", [c.client_id]);
   const files = await q<{ id: string; kind: string; original_name: string; mime: string }>(
-    "SELECT id, kind, original_name, mime FROM ops.attachments WHERE claim_id = $1 AND kind <> 'signature' ORDER BY uploaded_at", [id]);
+    "SELECT id, kind, original_name, mime FROM ops.attachments WHERE claim_id = $1 AND kind <> 'signature' AND kind <> 'top_sheet' ORDER BY uploaded_at", [id]);
+  const sheets = await listTopSheets(id);
   const kinds = ["photo", ...(c.claim_type === "substructure" ? ["drawing"] : []), ...(c.claim_type === "daywork" ? ["daywork_sheet"] : []), "client_form"];
   const need = Math.max(1, minPhotos[c.claim_type] ?? 1);
   const next = sig[c.claim_type] !== false ? "sign" : "split";
@@ -57,6 +70,25 @@ export default async function Evidence({ params, searchParams }: { params: Promi
         <p className="muted small">{ctx.site} · {ctx.job}{ctx.plot ? ` · Plot ${ctx.plot}` : ""}</p></div></div>
       <ClaimSteps id={id} current="evidence" signatureRequired={sig[c.claim_type] !== false} />
       <Flash sp={sp} />
+      <div className="card accent">
+        <h2 style={{ marginTop: 0 }}>Top sheet <span className="badge">Optional</span></h2>
+        <p className="muted small">Scan the paper top sheet, or upload the PDF. On a phone, the camera opens for each page. The office sees it with the claim. It is not included in the client backup pack.</p>
+        {sheets.length > 0 && (
+          <div className="thumbs" style={{ marginBottom: 12 }}>
+            {sheets.map((f, i) => (
+              <figure key={f.id}>
+                {f.mime.startsWith("image/")
+                  ? <img src={`/api/files/${f.id}`} alt={`Top sheet page ${i + 1}`} />
+                  : <a className="file-tile" href={`/api/files/${f.id}`}>PDF</a>}
+                <figcaption>Page {i + 1}</figcaption>
+                <form action={remove}><input type="hidden" name="claim_id" value={id} /><input type="hidden" name="attachment_id" value={f.id} />
+                  <button className="btn secondary small" type="submit">Remove</button></form>
+              </figure>
+            ))}
+          </div>
+        )}
+        <TopSheetScanner action={saveTopSheet} claimId={id} />
+      </div>
       <div className="alert info">Photos are required before this claim can be submitted (at least {need}). Keep the plot number or a landmark in shot where you can.</div>
       {client?.uses_own_forms && <div className="alert warn">This client may only accept its own forms. Fill in their form as usual and add a photo or scan of it below.</div>}
       {kinds.map((k) => {

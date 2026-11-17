@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { q } from "@/lib/db";
-import { addGangRate, addRateItem, addRateSet, setGangRateSets, AdminError } from "@/lib/admin";
+import { addGangRate, addGangSiteRate, addRateItem, addRateSet, setGangRateSets, AdminError } from "@/lib/admin";
 import { back, safeMessage, str } from "@/lib/forms";
 import { fmtDate, isoDate } from "@/lib/dates";
 import { gbp, gbpRate } from "@/lib/money";
@@ -34,6 +34,13 @@ async function gangSets(f: FormData) {
   catch (e) { back("/rates", "error", safeMessage(e, [AdminError])); }
   back("/rates", "ok", "Gang rate sets updated.");
 }
+async function override(f: FormData) {
+  "use server";
+  const user = await requireUser(["management", "admin"]);
+  try { await addGangSiteRate(user, str(f, "gang_id"), str(f, "site_id"), str(f, "item_id"), Number(str(f, "rate")), str(f, "effective_from")); }
+  catch (e) { back("/rates", "error", safeMessage(e, [AdminError])); }
+  back("/rates", "ok", "Gang override saved. It wins over the site rate card.");
+}
 
 const KIND = { standard: "KS Standard type", north: "North type", client: "Client-specific", individual: "Individual agreed" } as const;
 
@@ -41,7 +48,7 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
   await requireUser(["management", "admin"]);
   const sp = await searchParams;
   const today = isoDate(new Date());
-  const [sets, items, rates, gangs, clients] = await Promise.all([
+  const [sets, items, rates, gangs, clients, sites] = await Promise.all([
     q<{ id: string; name: string; kind: keyof typeof KIND; client: string | null }>(
       "SELECT rs.id, rs.name, rs.kind, c.name AS client FROM ops.rate_sets rs LEFT JOIN ops.clients c ON c.id = rs.client_id ORDER BY rs.kind, rs.name"),
     q<{ id: string; code: string; name: string; unit: string; claim_type: string; needs_courses: boolean }>(
@@ -51,13 +58,27 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
     q<{ id: string; name: string; ganger_name: string; base_rate_set_id: string | null; individual_rate_set_id: string | null }>(
       "SELECT id, name, ganger_name, base_rate_set_id, individual_rate_set_id FROM ops.gangs WHERE active ORDER BY name"),
     q<{ id: string; name: string }>("SELECT id, name FROM ops.clients WHERE active ORDER BY name"),
+    q<{ id: string; name: string }>("SELECT id, name FROM ops.sites WHERE active ORDER BY name"),
   ]);
   return (
     <>
       <div className="page-head"><div><div className="eyebrow">Management</div><h1>Gang pay rates</h1></div></div>
       <Flash sp={sp} />
-      <div className="alert info">Gang pay rates only. Client charge rates are held separately in the restricted commercial area. Foremen never see rates; gangs see their own rates only at the final split step of a claim.</div>
-      <p className="small muted">Order used on a claim (to be confirmed by K-S): the gang&apos;s individual agreed rate, then a client-specific set for the claim&apos;s client, then the gang&apos;s base set. A rate with a future effective date is an uplift: claims with a work date from that day use it.</p>
+      <div className="alert info">Gang pay rates only. Client charge rates are held separately in the restricted commercial area. Foremen never see rates. On a claim, the site rate card is used, and a rate saved for that gang on that site wins.</div>
+      <p className="small muted">Older rate sets are still stored. A gang&apos;s individual agreed set still overrides the site card. The base set and any client-specific set are no longer used to price a new claim.</p>
+
+      <form action={override} className="card stack">
+        <h2 style={{ marginTop: 0 }}>Per-gang override</h2>
+        <p className="small muted">Use this when one gang is paid a different rate on a site. It replaces the site card for that gang only.</p>
+        <div className="row">
+          <div><label htmlFor="ov_gang">Gang</label><select id="ov_gang" name="gang_id" required>{gangs.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+          <div><label htmlFor="ov_site">Site</label><select id="ov_site" name="site_id" required>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+          <div><label htmlFor="ov_item">Item</label><select id="ov_item" name="item_id" required>{items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
+          <div><label htmlFor="ov_rate">Rate (£)</label><input id="ov_rate" name="rate" type="number" min="0" step="0.0001" required /></div>
+          <div><label htmlFor="ov_date">Effective from</label><input id="ov_date" name="effective_from" type="date" required defaultValue={today} /></div>
+        </div>
+        <button className="btn" type="submit">Save override</button>
+      </form>
 
       {sets.map((s) => {
         const mine = rates.filter((r) => r.rate_set_id === s.id);

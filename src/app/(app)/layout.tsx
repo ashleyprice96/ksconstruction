@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { currentUser, logout } from "@/lib/auth";
+import { gangMustAcknowledge } from "@/lib/safety";
 import { isNamedUser } from "@/lib/commercial";
 import { redirect } from "next/navigation";
 import { DesktopNav, MobileNav, type NavLink } from "@/components/MainNav";
@@ -23,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await currentUser();
   if (!user) redirect("/login");
   if (user.must_change_password) redirect("/account/password");
+  if (await gangMustAcknowledge(user)) redirect("/safety");
   const named = await isNamedUser(user);
   const mgr = user.role === "management" || user.role === "admin";
   const links: NavLink[] = [

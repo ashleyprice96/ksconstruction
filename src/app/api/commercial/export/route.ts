@@ -1,11 +1,14 @@
 import ExcelJS from "exceljs";
 import { currentUser } from "@/lib/auth";
+import { safetyApiBlock } from "@/lib/safety";
 import { isNamedUser, marginBy, marginDetail } from "@/lib/commercial";
 
 // Margin export for the named list only. Logged by withCommercial.
 export async function GET(req: Request) {
   const user = await currentUser();
   if (!user || !(await isNamedUser(user))) return new Response("Not found", { status: 404 });
+  const blocked = await safetyApiBlock(user);
+  if (blocked) return blocked;
   const sp = new URL(req.url).searchParams;
   const ok = (d: string | null) => d && /^\d{4}-\d{2}-\d{2}$/.test(d);
   const from = sp.get("from"); const to = sp.get("to");

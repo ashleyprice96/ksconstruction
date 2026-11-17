@@ -35,8 +35,8 @@ async function main() {
   const hb = (await one("INSERT INTO ops.housebuilders (name) VALUES ('Example Homes (demo)') RETURNING id")).id;
   const siteA = (await one("INSERT INTO ops.sites (name, client_id, housebuilder_id, region) VALUES ('Oak Lane (demo)', $1, $2, 'North') RETURNING id", [clientA, hb])).id;
   const siteB = (await one("INSERT INTO ops.sites (name, client_id, housebuilder_id, region) VALUES ('Mill Street (demo)', $1, $2, 'Midlands') RETURNING id", [clientB, hb])).id;
-  const jobA = (await one("INSERT INTO ops.job_numbers (site_id, code) VALUES ($1, 'DEMO-001') RETURNING id", [siteA])).id;
-  const jobB = (await one("INSERT INTO ops.job_numbers (site_id, code) VALUES ($1, 'DEMO-002') RETURNING id", [siteB])).id;
+  const jobA = (await one("INSERT INTO ops.job_numbers (site_id, code) VALUES ($1, 'KS01') RETURNING id", [siteA])).id;
+  const jobB = (await one("INSERT INTO ops.job_numbers (site_id, code) VALUES ($1, 'KS02') RETURNING id", [siteB])).id;
   const ht = (await one("INSERT INTO ops.house_types (name) VALUES ('Type A (demo)') RETURNING id")).id;
   for (let i = 1; i <= 6; i++) {
     await db.query("INSERT INTO ops.plots (site_id, job_number_id, house_type_id, plot_number) VALUES ($1, $2, $3, $4)", [siteA, jobA, ht, String(i)]);
@@ -56,6 +56,8 @@ async function main() {
   const trench = await item("DEMO_TRENCH", "Trench block (demo)", "block", "substructure", true, 1);
   const b100 = await item("DEMO_100", "100 mm block (demo)", "block", "substructure", true, 2);
   const c140 = await item("DEMO_140", "140 mm commons (demo)", "brick", "substructure", true, 3);
+  const commons = await item("DEMO_COMMONS", "Commons (demo)", "1,000", "substructure", false, 4);
+  const facings = await item("DEMO_FACINGS", "Facings (demo)", "1,000", "substructure", false, 5);
   const dw = await item("DEMO_DAYWORK", "Daywork (demo)", "hour", "daywork", false, 1);
 
   const std = (await one("INSERT INTO ops.rate_sets (name, kind) VALUES ('Demo Standard', 'standard') RETURNING id")).id;
@@ -67,6 +69,23 @@ async function main() {
   await rate(std, trench, "2.20", plus(nextFriday(), 60)); // future uplift example
   await rate(clientSet, c140, "1.45");
   await rate(indiv, trench, "2.05");
+
+  const siteRate = (site: string, it: string, r: string) =>
+    db.query("INSERT INTO ops.site_rates (site_id, item_id, rate, effective_from) VALUES ($1, $2, $3, $4)", [site, it, r, from]);
+  for (const site of [siteA, siteB]) {
+    await siteRate(site, trench, "2.10");
+    await siteRate(site, b100, "1.55");
+    await siteRate(site, c140, "1.40");
+    await siteRate(site, dw, "19.00");
+    for (const [lift, v] of [[lift1, "3000.00"], [lift2, "2700.00"], [patch, "600.00"]]) {
+      await db.query("INSERT INTO ops.site_lift_values (site_id, lift_id, gang_value, effective_from) VALUES ($1, $2, $3, $4)", [site, lift, v, from]);
+    }
+  }
+  // Fictional site card: the North site is £10 higher per 1,000 on commons and facings.
+  await siteRate(siteA, commons, "50.00");
+  await siteRate(siteB, commons, "40.00");
+  await siteRate(siteA, facings, "65.00");
+  await siteRate(siteB, facings, "55.00");
 
   const gang1 = (await one("INSERT INTO ops.gangs (name, ganger_name, base_rate_set_id) VALUES ('Demo Gang One', 'Alex Demo', $1) RETURNING id", [std])).id;
   const gang2 = (await one("INSERT INTO ops.gangs (name, ganger_name, base_rate_set_id, individual_rate_set_id) VALUES ('Demo Gang Two', 'Sam Demo', $1, $2) RETURNING id", [std, indiv])).id;

@@ -2,14 +2,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser, isManager } from "@/lib/auth";
 import { q, q1 } from "@/lib/db";
-import { approveClaim, assignPayRun, loadClaim, reduceLine, returnClaim, ClaimError } from "@/lib/claims";
+import { approveClaim, assignPayRun, addTopSheets, loadClaim, reduceLine, returnClaim, ClaimError } from "@/lib/claims";
 import { claimContext, STATUS_LABEL, TYPE_LABEL } from "@/lib/lookups";
 import { back, safeMessage, str } from "@/lib/forms";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { gbp, gbpRate } from "@/lib/money";
 import { settings } from "@/lib/settings";
 import ClaimSummary from "@/components/ClaimSummary";
+import TopSheetScanner from "@/components/TopSheetScanner";
 import Flash from "@/components/Flash";
+import { listTopSheets } from "@/lib/attachments";
 
 async function approve(f: FormData) {
   "use server";
@@ -35,6 +37,16 @@ async function reduce(f: FormData) {
   catch (e) { back(`/claims/${id}`, "error", safeMessage(e, [ClaimError])); }
   back(`/claims/${id}`, "ok", "Reduction recorded. Splits rescaled.");
 }
+async function saveTopSheet(f: FormData) {
+  "use server";
+  const user = await requireUser(["management", "admin"]);
+  const id = str(f, "claim_id");
+  const files = f.getAll("pages").filter((x): x is File => x instanceof File && x.size > 0);
+  try { await addTopSheets(user, id, files); }
+  catch (e) { back(`/claims/${id}`, "error", safeMessage(e, [ClaimError])); }
+  back(`/claims/${id}`, "ok", "Top sheet saved.");
+}
+
 async function setRun(f: FormData) {
   "use server";
   const user = await requireUser(["management", "admin"]);
@@ -64,6 +76,7 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
   const showSplits = mgr || (user.role === "gang" && !editable);
   const splits = showSplits ? await q<{ name: string; legal_name: string; amount: string; original_amount: string | null }>(
     `SELECT p.name, p.legal_name, s.amount, s.original_amount FROM ops.splits s JOIN ops.payees p ON p.id = s.payee_id WHERE s.claim_id = $1 ORDER BY p.name`, [id]) : [];
+  const sheets = await listTopSheets(id);
 
   return (
     <>
@@ -93,6 +106,26 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
           {c.submitted_at && <><dt>Submitted</dt><dd>{fmtDateTime(c.submitted_at)}</dd></>}
           {c.notes && <><dt>Notes</dt><dd>{c.notes}</dd></>}
         </dl>
+      </div>
+
+      <h2>Top sheet</h2>
+      <div className="card" data-testid="top-sheet-approval">
+        {sheets.length === 0 && <p className="muted" style={{ marginTop: 0 }}>No top sheet has been scanned for this claim.</p>}
+        {sheets.length > 0 && (
+          <div className="thumbs">
+            {sheets.map((f, i) => (
+              <figure key={f.id}>
+                <a href={`/api/files/${f.id}`} target="_blank" rel="noreferrer">
+                  {f.mime.startsWith("image/")
+                    ? <img src={`/api/files/${f.id}`} alt={`Top sheet page ${i + 1}`} />
+                    : <div className="file-tile">Open PDF</div>}
+                </a>
+                <figcaption>Page {i + 1}</figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
+        {mgr && <TopSheetScanner action={saveTopSheet} claimId={id} />}
       </div>
 
       <h2>Work and evidence</h2>
