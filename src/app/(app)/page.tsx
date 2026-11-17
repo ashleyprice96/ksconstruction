@@ -56,7 +56,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             count(*) FILTER (WHERE status = 'returned') AS returned,
             count(*) FILTER (WHERE status = 'awaiting_management' AND EXISTS (SELECT 1 FROM ops.claim_flags f WHERE f.claim_id = c.id)) AS flagged,
             count(*) FILTER (WHERE c.week_ending = $1::date OR (c.week_ending IS NULL AND c.work_date BETWEEN $2::date AND $1::date)) AS this_week
-     FROM ops.claims c WHERE true ${countGang}`, countParams);
+     FROM ops.claims c WHERE c.deleted_at IS NULL ${countGang}`, countParams);
   const issues = await q1<{ open: string; safety: string }>(
     `SELECT count(*) FILTER (WHERE status <> 'closed' AND kind = 'snag') AS open, count(*) FILTER (WHERE status <> 'closed' AND kind = 'safety') AS safety
      FROM ops.issues WHERE true ${issueGang}`, issueParams);
@@ -71,7 +71,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
        (SELECT sum(gang_value) FROM ops.claim_lines l WHERE l.claim_id = c.id) AS value
      FROM ops.claims c JOIN ops.gangs g ON g.id = c.gang_id JOIN ops.sites s ON s.id = c.site_id
      JOIN ops.job_numbers j ON j.id = c.job_number_id LEFT JOIN ops.plots p ON p.id = c.plot_id
-     WHERE true ${recentGang}
+     WHERE c.deleted_at IS NULL ${recentGang}
      ORDER BY c.created_at DESC LIMIT 8`, recentParams);
 
   let heroMoney = false;
@@ -85,25 +85,25 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         const total = await q1<{ total: string }>(
           `SELECT coalesce(sum(l.gang_value), 0)::text AS total
            FROM ops.claims c LEFT JOIN ops.claim_lines l ON l.claim_id = c.id
-           WHERE c.pay_run_id = $1 AND c.status IN ('awaiting_management', 'approved', 'paid')`, [nextRun.id]);
+           WHERE c.pay_run_id = $1 AND c.deleted_at IS NULL AND c.status IN ('awaiting_management', 'approved', 'paid')`, [nextRun.id]);
         heroValue = Number(total?.total ?? 0);
       }
       const rows = await q<{ week: string; total: string }>(
         `SELECT to_char(c.week_ending, 'YYYY-MM-DD') AS week, coalesce(sum(l.gang_value), 0)::text AS total
          FROM ops.claims c LEFT JOIN ops.claim_lines l ON l.claim_id = c.id
-         WHERE c.week_ending BETWEEN $1::date AND $2::date AND c.status <> 'draft'
+         WHERE c.week_ending BETWEEN $1::date AND $2::date AND c.deleted_at IS NULL AND c.status <> 'draft'
          GROUP BY c.week_ending`, [from, weekEnding]);
       points = seriesWeeks(weekEnding, 12, new Map(rows.map((r) => [r.week, Number(r.total)])));
     } else {
       if (nextRun) {
         const total = await q1<{ n: string }>(
           `SELECT count(*)::text AS n FROM ops.claims
-           WHERE pay_run_id = $1 AND status IN ('awaiting_management', 'approved', 'paid')`, [nextRun.id]);
+           WHERE pay_run_id = $1 AND deleted_at IS NULL AND status IN ('awaiting_management', 'approved', 'paid')`, [nextRun.id]);
         heroValue = Number(total?.n ?? 0);
       }
       const rows = await q<{ week: string; n: string }>(
         `SELECT to_char(week_ending, 'YYYY-MM-DD') AS week, count(*)::text AS n
-         FROM ops.claims WHERE week_ending BETWEEN $1::date AND $2::date AND status <> 'draft'
+         FROM ops.claims WHERE deleted_at IS NULL AND week_ending BETWEEN $1::date AND $2::date AND status <> 'draft'
          GROUP BY week_ending`, [from, weekEnding]);
       points = seriesWeeks(weekEnding, 12, new Map(rows.map((r) => [r.week, Number(r.n)])));
     }

@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { splitScreen, submitClaim, ClaimError } from "@/lib/claims";
+import { addGangMember, gangMembers, MemberSplitError, type SplitRequest } from "@/lib/members";
+import { RamsRequiredError } from "@/lib/rams";
 import { claimContext, TYPE_LABEL } from "@/lib/lookups";
 import { back, safeMessage, str } from "@/lib/forms";
 import { gbp, gbpPence, gbpRate, toPence } from "@/lib/money";
@@ -9,16 +11,35 @@ import ClaimSteps from "@/components/ClaimSteps";
 import Flash from "@/components/Flash";
 import SplitForm from "@/components/SplitForm";
 
+function readSplit(f: FormData): SplitRequest[] {
+  const basis = str(f, "basis") === "percent" ? "percent" : "amount";
+  const rows: SplitRequest[] = [];
+  for (const [k, v] of f.entries()) {
+    if (!k.startsWith("split_") || String(v).trim() === "") continue;
+    const raw = String(v);
+    rows.push({ memberId: k.slice(6), basis, value: basis === "percent" ? Number(raw) : toPence(raw) });
+  }
+  return rows;
+}
+
+async function addPerson(f: FormData) {
+  "use server";
+  const user = await requireUser(["gang"]);
+  const id = str(f, "claim_id");
+  try { await addGangMember(user, str(f, "name")); }
+  catch (e) { back(`/claims/${id}/split`, "error", safeMessage(e, [MemberSplitError])); }
+  back(`/claims/${id}/split`, "ok", "Added. They do not get a login.");
+}
+
 async function submit(f: FormData) {
   "use server";
   const user = await requireUser(["gang"]);
   const id = str(f, "claim_id");
-  const split: { payeeId: string; pence: number }[] = [];
-  for (const [k, v] of f.entries()) {
-    if (k.startsWith("split_") && String(v).trim() !== "") split.push({ payeeId: k.slice(6), pence: toPence(String(v)) });
+  try { await submitClaim(user, id, readSplit(f)); }
+  catch (e) {
+    if (e instanceof RamsRequiredError) redirect(`/safety/rams/${e.siteId}?next=/claims/${id}/split`);
+    back(`/claims/${id}/split`, "error", safeMessage(e, [ClaimError, MemberSplitError]));
   }
-  try { await submitClaim(user, id, split); }
-  catch (e) { back(`/claims/${id}/split`, "error", safeMessage(e, [ClaimError])); }
   redirect(`/claims/${id}?ok=${encodeURIComponent("Claim submitted for management sign-off.")}`);
 }
 
@@ -30,7 +51,7 @@ export default async function Split({ params, searchParams }: { params: Promise<
   if (!data) redirect(`/claims/${id}`);
   const ctx = await claimContext(id);
   const sig = await settings.signatureRequired();
-  const existing = Object.fromEntries(data.existing.map((s) => [s.payee_id, s.amount]));
+  const members = await gangMembers(data.claim.gang_id);
   return (
     <>
       <div className="page-head"><div><div className="eyebrow">{data.claim.ref} · {TYPE_LABEL[data.claim.claim_type]}</div>
@@ -58,10 +79,19 @@ export default async function Split({ params, searchParams }: { params: Promise<
         </div>
         <div className="total-line"><span>Claim total</span><span>{gbpPence(data.totalPence)}</span></div>
       </div>
+      <form action={addPerson} className="card stack">
+        <h2 style={{ marginTop: 0 }}>People in your gang</h2>
+        <p className="small muted">Add each person by name. This does not create a login.</p>
+        <input type="hidden" name="claim_id" value={id} />
+        <div className="row">
+          <div style={{ flex: 1 }}><label htmlFor="member_name">Name</label><input id="member_name" name="name" type="text" required maxLength={80} placeholder="For example, Jo Demo" /></div>
+          <div style={{ alignSelf: "end" }}><button className="btn secondary" type="submit">Add member</button></div>
+        </div>
+        {members.length > 0 && <p className="small" style={{ marginBottom: 0 }}>{members.map((m) => m.name).join(", ")}</p>}
+      </form>
       <form action={submit} className="card stack">
         <input type="hidden" name="claim_id" value={id} />
-        <SplitForm totalPence={data.totalPence} payees={data.payees} existing={existing} disabled={data.problems.length > 0} />
-        <p className="small muted">The split cannot be more than the claim value. Submitted claims go to K-S management for sign-off.</p>
+        <SplitForm totalPence={data.totalPence} members={members} existing={{}} disabled={data.problems.length > 0} />
         <button className="btn" type="submit" disabled={data.problems.length > 0}>Submit claim</button>
       </form>
     </>

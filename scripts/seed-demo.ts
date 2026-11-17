@@ -89,6 +89,7 @@ async function main() {
 
   const gang1 = (await one("INSERT INTO ops.gangs (name, ganger_name, base_rate_set_id) VALUES ('Demo Gang One', 'Alex Demo', $1) RETURNING id", [std])).id;
   const gang2 = (await one("INSERT INTO ops.gangs (name, ganger_name, base_rate_set_id, individual_rate_set_id) VALUES ('Demo Gang Two', 'Sam Demo', $1, $2) RETURNING id", [std, indiv])).id;
+  await db.query("INSERT INTO ops.gang_members (gang_id, name) VALUES ($1, 'Alex Demo'), ($1, 'Jo Demo'), ($2, 'Sam Demo')", [gang1, gang2]);
   const payee = (g: string, n: string, legal: string, e: string, ok: boolean, ref: string) =>
     one("INSERT INTO ops.payees (gang_id, name, legal_name, entity_type, eligible, payment_ref, eligibility_updated_at) VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id", [g, n, legal, e, ok, ref]);
   const p1 = (await payee(gang1, "Alex Demo", "Alex Demo Brickwork Ltd (demo)", "limited_company", true, "DEMO-P1")).id;

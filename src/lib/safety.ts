@@ -2,36 +2,53 @@ import "server-only";
 import { q, q1 } from "./db";
 import type { User } from "./auth";
 import { checkFile, saveFile } from "./files";
+import { sha256, signaturePng } from "./sign-off";
+
+export type SafetyKind = "alert" | "toolbox";
 
 export interface SafetyAlert {
   id: string;
+  kind: SafetyKind;
   title: string;
   body: string;
   attachment_name: string | null;
   attachment_mime: string | null;
   published_at: string;
+  due_on: string | null;
+  sites: string | null;
 }
 
-/** Active alerts this gang lead has not confirmed. Office users are never blocked. */
+const TARGET = `(
+  NOT EXISTS (SELECT 1 FROM ops.hs_alert_sites s WHERE s.alert_id = a.id)
+  OR EXISTS (
+    SELECT 1 FROM ops.hs_alert_sites s
+    JOIN ops.claims c ON c.site_id = s.site_id AND c.gang_id = $2 AND c.deleted_at IS NULL
+    WHERE s.alert_id = a.id))`;
+
+/** Active alerts and toolbox talks this gang lead has not confirmed. */
 export async function pendingSafetyAlerts(user: User): Promise<SafetyAlert[]> {
-  if (user.role !== "gang") return [];
+  if (user.role !== "gang" || !user.gang_id) return [];
   return q<SafetyAlert>(
-    `SELECT a.id, a.title, a.body, a.attachment_name, a.attachment_mime, a.published_at
+    `SELECT a.id, a.kind, a.title, a.body, a.attachment_name, a.attachment_mime, a.published_at,
+            to_char(a.due_on, 'YYYY-MM-DD') AS due_on,
+            (SELECT string_agg(si.name, ', ' ORDER BY si.name)
+               FROM ops.hs_alert_sites s JOIN ops.sites si ON si.id = s.site_id
+              WHERE s.alert_id = a.id) AS sites
      FROM ops.hs_alerts a
      WHERE a.active AND NOT EXISTS (
        SELECT 1 FROM ops.hs_acknowledgements k WHERE k.alert_id = a.id AND k.user_id = $1)
+       AND ${TARGET}
      ORDER BY a.published_at`,
-    [user.id]);
+    [user.id, user.gang_id]);
 }
 
 export async function gangMustAcknowledge(user: User): Promise<boolean> {
   return (await pendingSafetyAlerts(user)).length > 0;
 }
 
-/** Used by claim actions so a gang lead cannot submit work while an alert is outstanding. */
 export async function assertSafetyCleared(user: User) {
   if (await gangMustAcknowledge(user)) {
-    throw new SafetyError("Confirm the health and safety alert before continuing.");
+    throw new SafetyError("Confirm the health and safety item before continuing.");
   }
 }
 
@@ -40,88 +57,189 @@ export class SafetyError extends Error {}
 export async function safetyApiBlock(user: User | null): Promise<Response | null> {
   if (!user || user.role !== "gang") return null;
   if (user.must_change_password) return new Response("Set a new password before continuing.", { status: 403 });
-  if (await gangMustAcknowledge(user)) return new Response("Confirm the health and safety alert before continuing.", { status: 403 });
+  if (await gangMustAcknowledge(user)) return new Response("Confirm the health and safety item before continuing.", { status: 403 });
   return null;
 }
 
-export async function confirmSafetyAlerts(user: User, confirmedIds: string[], ip: string) {
+export interface SafetyConfirmation {
+  id: string;
+  signatureName: string;
+  signaturePng: string;
+  attendeeIds: string[];
+}
+
+export async function confirmSafetyAlerts(user: User, items: SafetyConfirmation[], ip: string, userAgent: string) {
   const pending = await pendingSafetyAlerts(user);
   if (!pending.length) return;
-  const chosen = new Set(confirmedIds);
-  if (pending.some((a) => !chosen.has(a.id))) throw new SafetyError("Tick every alert to confirm you have read and understood it.");
+  const byId = new Map(items.map((item) => [item.id, item]));
+  if (pending.some((a) => !byId.has(a.id))) throw new SafetyError("Confirm every health and safety item.");
   const recordedIp = (ip || "unknown").slice(0, 64);
+  const agent = (userAgent || "unknown").slice(0, 300);
+  const members = user.gang_id
+    ? await q<{ id: string }>("SELECT id FROM ops.gang_members WHERE gang_id = $1 AND active", [user.gang_id])
+    : [];
+  const memberIds = new Set(members.map((m) => m.id));
   for (const alert of pending) {
+    const item = byId.get(alert.id)!;
+    const signature = item.signatureName.trim().replace(/\s+/g, " ");
+    if (signature.length < 3) throw new SafetyError("Type your name to sign.");
+    let png: Buffer;
+    try { png = signaturePng(item.signaturePng); }
+    catch (e) { throw new SafetyError(e instanceof Error ? e.message : "Draw your signature."); }
+    if (alert.kind === "toolbox" && item.attendeeIds.some((id) => !memberIds.has(id))) {
+      throw new SafetyError("Attendance can only include people in your gang.");
+    }
+    const doc = await q1<{ content_sha256: string | null; revision: string }>(
+      "SELECT content_sha256, revision FROM ops.hs_alerts WHERE id = $1", [alert.id]);
     await q(
-      `INSERT INTO ops.hs_acknowledgements (alert_id, user_id, ip) VALUES ($1, $2, $3)
+      `INSERT INTO ops.hs_acknowledgements
+         (alert_id, user_id, ip, user_agent, signature_name, signature_png, content_sha256, revision)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (alert_id, user_id) DO NOTHING`,
-      [alert.id, user.id, recordedIp]);
+      [alert.id, user.id, recordedIp, agent, signature.slice(0, 80), png, doc?.content_sha256 ?? null, doc?.revision ?? "1"]);
+    if (alert.kind === "toolbox") {
+      for (const memberId of item.attendeeIds) {
+        await q(
+          `INSERT INTO ops.hs_attendees (alert_id, user_id, member_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [alert.id, user.id, memberId]);
+      }
+    }
   }
 }
 
-export async function publishSafetyAlert(user: User, input: { title: string; body: string; active: boolean; file: File | null }) {
-  if (user.role !== "management" && user.role !== "admin") throw new SafetyError("Management only.");
-  if (input.title.trim().length < 3 || input.body.trim().length < 3) throw new SafetyError("Enter a title and the alert text.");
+function assertPublisher(user: User) {
+  if (user.role !== "admin") throw new SafetyError("Only an administrator can publish health and safety items.");
+}
+
+export async function publishSafetyAlert(user: User, input: {
+  kind: SafetyKind; title: string; body: string; active: boolean; dueOn: string;
+  siteIds: string[]; file: File | null;
+}) {
+  assertPublisher(user);
+  const title = input.title.trim();
+  const body = input.body.trim();
+  if (title.length < 3) throw new SafetyError("Enter a title.");
+  const file = input.file && input.file.size > 0 ? input.file : null;
+  if (!file && body.length < 3) throw new SafetyError("Add a PDF, or write the text.");
+  if (input.dueOn && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueOn)) throw new SafetyError("Check the due date.");
   let key: string | null = null;
   let name: string | null = null;
   let mime: string | null = null;
-  if (input.file && input.file.size > 0) {
-    const err = checkFile(input.file, true);
+  let bytes: Buffer | null = null;
+  if (file) {
+    if (input.kind === "toolbox" && file.type !== "application/pdf") throw new SafetyError("A toolbox talk file must be a PDF.");
+    const err = checkFile(file, true);
     if (err) throw new SafetyError(err);
-    key = await saveFile(Buffer.from(await input.file.arrayBuffer()), input.file.type);
-    name = input.file.name.slice(0, 200);
-    mime = input.file.type;
+    if (file.size > 6 * 1024 * 1024) throw new SafetyError("The PDF must be 6 MB or smaller.");
+    bytes = Buffer.from(await file.arrayBuffer());
+    if (file.type === "application/pdf") {
+      key = null;
+    } else {
+      key = await saveFile(bytes, file.type);
+      bytes = null;
+    }
+    name = file.name.slice(0, 200);
+    mime = file.type;
   }
-  await q(
-    `INSERT INTO ops.hs_alerts (title, body, active, attachment_key, attachment_name, attachment_mime, published_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [input.title.trim().slice(0, 200), input.body.trim().slice(0, 10000), input.active, key, name, mime, user.id]);
+  const content = bytes ?? Buffer.from(body, "utf8");
+  const row = await q1<{ id: string }>(
+    `INSERT INTO ops.hs_alerts (kind, title, body, active, due_on, revision, content_sha256, attachment_key, attachment_name, attachment_mime, attachment_bytes, published_by)
+     VALUES ($1, $2, $3, $4, $5, '1', $6, $7, $8, $9, $10, $11) RETURNING id`,
+    [input.kind, title.slice(0, 200), body.slice(0, 10000), input.active, input.dueOn || null, sha256(content), key, name, mime, bytes, user.id]);
+  for (const siteId of [...new Set(input.siteIds)].filter((id) => /^[0-9a-f-]{36}$/.test(id))) {
+    await q("INSERT INTO ops.hs_alert_sites (alert_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [row!.id, siteId]);
+  }
 }
 
 export async function setSafetyAlertActive(user: User, alertId: string, active: boolean) {
-  if (user.role !== "management" && user.role !== "admin") throw new SafetyError("Management only.");
+  assertPublisher(user);
   await q("UPDATE ops.hs_alerts SET active = $2 WHERE id = $1", [alertId, active]);
 }
 
 export interface SafetyRoster {
   id: string;
+  kind: SafetyKind;
   title: string;
   body: string;
   active: boolean;
   published_at: string;
+  due_on: string | null;
+  revision: string;
+  content_sha256: string | null;
+  sites: string | null;
   attachment_name: string | null;
-  people: { name: string; acknowledged_at: string | null; ip: string | null }[];
+  people: { user_id: string; name: string; acknowledged_at: string | null; ip: string | null; signature_name: string | null; signed: boolean; attendees: string | null }[];
 }
 
 export async function safetyRoster(): Promise<SafetyRoster[]> {
   const rows = await q<{
-    id: string; title: string; body: string; active: boolean; published_at: string; attachment_name: string | null;
-    person: string; acknowledged_at: string | null; ip: string | null;
+    id: string; kind: SafetyKind; title: string; body: string; active: boolean; published_at: string;
+    due_on: string | null; revision: string; content_sha256: string | null; sites: string | null; attachment_name: string | null;
+    person: string; user_id: string; acknowledged_at: string | null; ip: string | null; signature_name: string | null; signed: boolean; attendees: string | null;
   }>(
-    `SELECT a.id, a.title, a.body, a.active, a.published_at, a.attachment_name,
-            u.name AS person, k.acknowledged_at, k.ip
+    `SELECT a.id, a.kind, a.title, a.body, a.active, a.published_at, to_char(a.due_on, 'YYYY-MM-DD') AS due_on,
+            a.revision, a.content_sha256,
+            (SELECT string_agg(si.name, ', ' ORDER BY si.name) FROM ops.hs_alert_sites s JOIN ops.sites si ON si.id = s.site_id WHERE s.alert_id = a.id) AS sites,
+            a.attachment_name, u.id AS user_id, u.name AS person, k.acknowledged_at, k.ip, k.signature_name,
+            (k.signature_png IS NOT NULL) AS signed,
+            (SELECT string_agg(m.name, ', ' ORDER BY m.name) FROM ops.hs_attendees t JOIN ops.gang_members m ON m.id = t.member_id
+              WHERE t.alert_id = a.id AND t.user_id = u.id) AS attendees
      FROM ops.hs_alerts a
-     JOIN ops.users u ON u.role = 'gang' AND u.active
+     JOIN ops.users u ON u.role = 'gang' AND u.active AND (
+       NOT EXISTS (SELECT 1 FROM ops.hs_alert_sites s WHERE s.alert_id = a.id)
+       OR EXISTS (
+         SELECT 1 FROM ops.hs_alert_sites s
+         JOIN ops.claims c ON c.site_id = s.site_id AND c.gang_id = u.gang_id AND c.deleted_at IS NULL
+         WHERE s.alert_id = a.id))
      LEFT JOIN ops.hs_acknowledgements k ON k.alert_id = a.id AND k.user_id = u.id
      ORDER BY a.published_at DESC, u.name`);
   const byId = new Map<string, SafetyRoster>();
   for (const row of rows) {
     let alert = byId.get(row.id);
     if (!alert) {
-      alert = { id: row.id, title: row.title, body: row.body, active: row.active, published_at: row.published_at, attachment_name: row.attachment_name, people: [] };
+      alert = {
+        id: row.id, kind: row.kind, title: row.title, body: row.body, active: row.active, published_at: row.published_at,
+        due_on: row.due_on, revision: row.revision, content_sha256: row.content_sha256, sites: row.sites, attachment_name: row.attachment_name, people: [],
+      };
       byId.set(row.id, alert);
     }
-    alert.people.push({ name: row.person, acknowledged_at: row.acknowledged_at, ip: row.ip });
+    alert.people.push({
+      user_id: row.user_id, name: row.person, acknowledged_at: row.acknowledged_at, ip: row.ip,
+      signature_name: row.signature_name, signed: row.signed, attendees: row.attendees,
+    });
   }
   return [...byId.values()];
 }
 
+export async function safetyCsv(): Promise<string> {
+  const alerts = await safetyRoster();
+  const esc = (v: string | null | undefined) => {
+    const s = v ?? "";
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = ["Type,Title,Revision,Content SHA-256,Sites,Due,Gang lead,Confirmed,When,Typed name,Drawn signature,Attendees"];
+  for (const alert of alerts) {
+    for (const person of alert.people) {
+      lines.push([
+        alert.kind === "toolbox" ? "Toolbox talk" : "H&S alert",
+        alert.title, alert.revision, alert.content_sha256 ?? "", alert.sites ?? "All sites", alert.due_on ?? "",
+        person.name, person.acknowledged_at ? "Yes" : "No", person.acknowledged_at ?? "",
+        person.signature_name ?? "", person.signed ? "Yes" : "No", person.attendees ?? "",
+      ].map(esc).join(","));
+    }
+  }
+  return "﻿" + lines.join("\r\n") + "\r\n";
+}
+
 export async function safetyFile(user: User, alertId: string) {
-  return q1<{ attachment_key: string; attachment_name: string; attachment_mime: string; active: boolean }>(
-    `SELECT attachment_key, attachment_name, attachment_mime, active FROM ops.hs_alerts
-     WHERE id = $1 AND attachment_key IS NOT NULL`,
-    [alertId]).then((row) => {
-      if (!row) return null;
-      if (user.role === "gang" && !row.active) return null;
-      return row;
-    });
+  const row = await q1<{ attachment_key: string | null; attachment_name: string; attachment_mime: string; attachment_bytes: Buffer | null; active: boolean }>(
+    `SELECT attachment_key, attachment_name, attachment_mime, attachment_bytes, active FROM ops.hs_alerts
+     WHERE id = $1 AND (attachment_bytes IS NOT NULL OR attachment_key IS NOT NULL)`,
+    [alertId]);
+  if (!row) return null;
+  if (user.role === "gang" && !row.active) return null;
+  const bytes = row.attachment_bytes
+    ? (Buffer.isBuffer(row.attachment_bytes) ? row.attachment_bytes : Buffer.from(row.attachment_bytes))
+    : null;
+  return { ...row, bytes };
 }

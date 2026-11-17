@@ -15,6 +15,7 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Promi
   const status = sp.status && STATUS_LABEL[sp.status] ? sp.status : null;
   const params: unknown[] = [];
   const where: string[] = [];
+  where.push("c.deleted_at IS NULL");
   if (user.role === "gang") { params.push(user.gang_id); where.push(`c.gang_id = $${params.length}`); }
   if (status) { params.push(status); where.push(`c.status = $${params.length}`); }
   const { today, weekStart, weekEnding } = await currentWeek();
