@@ -12,7 +12,7 @@ import SignaturePad from "@/components/SignaturePad";
 
 async function sign(f: FormData) {
   "use server";
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const id = str(f, "claim_id");
   try { await signForeman(user, id, str(f, "foreman_name"), str(f, "signature")); }
   catch (e) { back(`/claims/${id}/sign`, "error", safeMessage(e, [ClaimError])); }
@@ -20,7 +20,7 @@ async function sign(f: FormData) {
 }
 
 export default async function Sign({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const { id } = await params;
   const sp = await searchParams;
   const c = await loadClaim(user, id).catch(() => null);

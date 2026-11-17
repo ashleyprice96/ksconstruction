@@ -37,6 +37,15 @@ export async function pendingRams(user: User, siteId: string): Promise<SiteRams[
     [siteId, user.id]);
 }
 
+export async function unsignedRamsFor(gangUserId: string, siteId: string): Promise<{ title: string; revision: string }[]> {
+  return q(
+    `SELECT r.title, r.revision FROM ops.site_rams r
+     WHERE r.site_id = $1 AND r.active AND NOT EXISTS (
+       SELECT 1 FROM ops.rams_acknowledgements k WHERE k.rams_id = r.id AND k.user_id = $2)
+     ORDER BY r.title`,
+    [siteId, gangUserId]);
+}
+
 export async function assertRamsCleared(user: User, siteId: string) {
   const pending = await pendingRams(user, siteId);
   if (pending.length) throw new RamsRequiredError(siteId);

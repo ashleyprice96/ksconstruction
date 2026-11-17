@@ -9,7 +9,7 @@ export interface ClaimPlot { id: string; jobId: string; site: string; job: strin
 export interface ClaimRate { siteId: string; name: string; unit: string; rate: string; source: string }
 
 export default function NewClaimForm({
-  action, sites, jobs, plots, rates, defaultDate,
+  action, sites, jobs, plots, rates, defaultDate, siteWarnings, gangUserId,
 }: {
   action: (f: FormData) => void;
   sites: ClaimSite[];
@@ -17,6 +17,8 @@ export default function NewClaimForm({
   plots: ClaimPlot[];
   rates: ClaimRate[];
   defaultDate: string;
+  siteWarnings?: Record<string, string>;
+  gangUserId?: string;
 }) {
   const [siteId, setSiteId] = useState("");
   const [jobId, setJobId] = useState("");
@@ -27,6 +29,7 @@ export default function NewClaimForm({
 
   return (
     <form action={action} className="card accent stack">
+      {gangUserId && <input type="hidden" name="gang_user" value={gangUserId} />}
       <div>
         <label htmlFor="type">Claim type</label>
         <select id="type" name="type" required defaultValue="substructure">
@@ -42,6 +45,7 @@ export default function NewClaimForm({
           <option value="" disabled>Choose the site</option>
           {sites.map((s) => <option key={s.id} value={s.id}>{s.name}{s.region ? ` · ${s.region}` : ""}{s.client ? ` · ${s.client}` : ""}</option>)}
         </select>
+        {siteId && siteWarnings?.[siteId] && <div className="alert warn" role="status">{siteWarnings[siteId]}</div>}
       </div>
       <div>
         <label htmlFor="job">Job number<span className="hint">K-S job code for the site, for example KS01.</span></label>

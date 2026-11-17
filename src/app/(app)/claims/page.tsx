@@ -34,6 +34,7 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Promi
     <>
       <div className="page-head">
         <div><div className="eyebrow">Claims</div><h1>{user.role === "gang" ? "Your claims" : "All claims"}</h1></div>
+        {mgr && <Link className="btn" href="/claims/for-gang">Enter claim for a gang</Link>}
       </div>
       <Flash sp={sp} />
       <section className="panel">

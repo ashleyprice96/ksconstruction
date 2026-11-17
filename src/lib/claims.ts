@@ -23,12 +23,14 @@ export interface ClaimRow {
   id: string; ref: string; gang_id: string; client_id: string; site_id: string; job_number_id: string;
   plot_id: string | null; claim_type: ClaimType; stage: string; work_date: string; week_ending: string | null;
   pay_run_id: string | null; rolled_to_next_run: boolean; status: string; notes: string;
-  submitted_at: string | null; created_at: string;
+  submitted_at: string | null; created_at: string; created_by: string;
+  entered_by_user_id: string | null; entered_at: string | null;
 }
 
 const CLAIM_COLS = `c.id, c.ref, c.gang_id, c.client_id, c.site_id, c.job_number_id, c.plot_id, c.claim_type, c.stage,
   to_char(c.work_date, 'YYYY-MM-DD') AS work_date, to_char(c.week_ending, 'YYYY-MM-DD') AS week_ending,
-  c.pay_run_id, c.rolled_to_next_run, c.status, c.notes, c.submitted_at, c.created_at`;
+  c.pay_run_id, c.rolled_to_next_run, c.status, c.notes, c.submitted_at, c.created_at, c.created_by,
+  c.entered_by_user_id, c.entered_at`;
 
 /** Load a claim the user may see. Deleted claims and another gang's claims are hidden. */
 export async function loadClaim(user: User, id: string): Promise<ClaimRow> {
@@ -55,6 +57,16 @@ export async function claimedLiftPercent(plotId: string, liftId: string, exceptC
 function assertGangEditable(user: User, c: ClaimRow) {
   if (user.role !== "gang" || c.gang_id !== user.gang_id) throw new ClaimError("Only the gang can edit this claim.");
   if (c.status !== "draft" && c.status !== "returned") throw new ClaimError("This claim has been submitted and can no longer be edited.");
+}
+
+/** Gang leads edit their drafts. Office can work a claim that is not approved or locked by a closed pay run. */
+async function assertDraftWriter(user: User, c: ClaimRow) {
+  if (user.role === "management" || user.role === "admin") {
+    const block = await claimEditLock(c);
+    if (block) throw new ClaimError(block);
+    return;
+  }
+  assertGangEditable(user, c);
 }
 
 // Step 1: job and work ---------------------------------------------------------
@@ -86,6 +98,43 @@ export async function createDraft(user: User, input: {
   return row!.id;
 }
 
+/** Office fills in a claim that belongs to a gang lead. Health and safety does not block this. */
+export async function createOfficeDraft(actor: User, gangUserId: string, input: {
+  siteId: string; jobNumberId: string; plotId: string | null; claimType: ClaimType; workDate: string; stage: string;
+}): Promise<string> {
+  if (actor.role !== "management" && actor.role !== "admin") throw new ClaimError("Management only.");
+  const lead = await q1<{ id: string; gang_id: string }>(
+    "SELECT id, gang_id FROM ops.users WHERE id = $1 AND role = 'gang' AND active", [gangUserId]);
+  if (!lead?.gang_id) throw new ClaimError("Choose a gang lead.");
+  const site = await q1<{ client_id: string | null; active: boolean }>("SELECT client_id, active FROM ops.sites WHERE id = $1", [input.siteId]);
+  if (!site || !site.active) throw new ClaimError("Choose a site from the list.");
+  if (!site.client_id) throw new ClaimError("This site has no client set up yet.");
+  const job = await q1("SELECT 1 FROM ops.job_numbers WHERE id = $1 AND site_id = $2 AND active", [input.jobNumberId, input.siteId]);
+  if (!job) throw new ClaimError("Choose a job number for this site.");
+  const needsPlot = input.claimType === "substructure" || input.claimType === "superstructure";
+  if (needsPlot && !input.plotId) throw new ClaimError("Choose a plot.");
+  if (input.plotId) {
+    const plot = await q1("SELECT 1 FROM ops.plots WHERE id = $1 AND site_id = $2 AND job_number_id = $3",
+      [input.plotId, input.siteId, input.jobNumberId]);
+    if (!plot) throw new ClaimError("That plot is not on this job number.");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.workDate)) throw new ClaimError("Enter the work date.");
+  const row = await q1<{ id: string; ref: string }>(
+    `INSERT INTO ops.claims (gang_id, client_id, site_id, job_number_id, plot_id, claim_type, stage, work_date, created_by, entered_by_user_id, entered_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now()) RETURNING id, ref`,
+    [lead.gang_id, site.client_id, input.siteId, input.jobNumberId, input.plotId, input.claimType, input.stage.slice(0, 80), input.workDate, lead.id, actor.id]);
+  await audit(actor.id, "claim", row!.id, "entered_for_gang", { gang_lead: lead.id, ref: row!.ref });
+  return row!.id;
+}
+
+/** Submit an office-entered claim and approve it in the same step. */
+export async function approveEnteredClaim(user: User, claimId: string, split: SplitRequest[]) {
+  await submitClaim(user, claimId, split);
+  const c = await loadClaim(user, claimId);
+  if (!c.pay_run_id) throw new ClaimError("No open pay run covers this claim, so it was submitted but not approved.");
+  await approveClaim(user, claimId, "Entered and approved by the office.");
+}
+
 // Step 2: quantities (no money involved) ------------------------------------------
 
 export interface QuantityInput {
@@ -98,7 +147,7 @@ export interface QuantityInput {
 
 export async function saveQuantities(user: User, claimId: string, input: QuantityInput) {
   const c = await loadClaim(user, claimId);
-  assertGangEditable(user, c);
+  await assertDraftWriter(user, c);
   await tx(async (db) => {
     await db.query("DELETE FROM ops.claim_lines WHERE claim_id = $1", [claimId]);
     await db.query("DELETE FROM ops.wall_measures WHERE claim_id = $1", [claimId]);
@@ -141,7 +190,7 @@ export async function saveQuantities(user: User, claimId: string, input: Quantit
 
 export async function addAttachment(user: User, claimId: string, kind: string, file: File) {
   const c = await loadClaim(user, claimId);
-  assertGangEditable(user, c);
+  await assertDraftWriter(user, c);
   if (!["photo", "drawing", "daywork_sheet", "client_form"].includes(kind)) throw new ClaimError("Unknown upload type.");
   const err = checkFile(file, kind !== "photo");
   if (err) throw new ClaimError(err);
@@ -186,7 +235,7 @@ export async function addTopSheets(user: User, claimId: string, files: File[]) {
 
 export async function removeAttachment(user: User, claimId: string, attachmentId: string) {
   const c = await loadClaim(user, claimId);
-  assertGangEditable(user, c);
+  await assertDraftWriter(user, c);
   await q("DELETE FROM ops.attachments WHERE id = $1 AND claim_id = $2 AND kind <> 'signature'", [attachmentId, claimId]);
   await audit(user.id, "claim", claimId, "attachment_removed", { attachment: attachmentId });
 }
@@ -195,7 +244,7 @@ export async function removeAttachment(user: User, claimId: string, attachmentId
 
 export async function signForeman(user: User, claimId: string, foremanName: string, pngDataUrl: string) {
   const c = await loadClaim(user, claimId);
-  assertGangEditable(user, c);
+  await assertDraftWriter(user, c);
   const name = foremanName.trim();
   if (name.length < 3) throw new ClaimError("The foreman must type their full name.");
   const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(pngDataUrl);
@@ -259,7 +308,7 @@ export async function priceClaim(db: PoolClient, c: ClaimRow): Promise<{ lines: 
 /** For the split screen: prices the claim and returns eligible payees. Gang only. */
 export async function splitScreen(user: User, claimId: string) {
   const c = await loadClaim(user, claimId);
-  assertGangEditable(user, c);
+  await assertDraftWriter(user, c);
   const priced = await tx((db) => priceClaim(db, c));
   const payees = await q<{ id: string; name: string; legal_name: string; entity_type: string; eligible: boolean }>(
     "SELECT id, name, legal_name, entity_type, eligible FROM ops.payees WHERE gang_id = $1 AND active ORDER BY name", [c.gang_id]);
@@ -272,8 +321,14 @@ export async function splitScreen(user: User, claimId: string) {
 export async function submitClaim(user: User, claimId: string, split: SplitRequest[]) {
   await assertSafetyCleared(user);
   const c = await loadClaim(user, claimId);
-  await assertRamsCleared(user, c.site_id);
-  assertGangEditable(user, c);
+  const office = user.role === "management" || user.role === "admin";
+  if (office) {
+    const block = await claimEditLock(c);
+    if (block) throw new ClaimError(block);
+  } else {
+    await assertRamsCleared(user, c.site_id);
+    assertGangEditable(user, c);
+  }
   const [minPhotos, sigRequired, cutoff] = await Promise.all([settings.minPhotos(), settings.signatureRequired(), settings.cutoff()]);
 
   await tx(async (db) => {
@@ -313,10 +368,11 @@ export async function submitClaim(user: User, claimId: string, split: SplitReque
       }
     }
 
+    const officeEntered = office && !!c.entered_by_user_id;
     const members = (await db.query<{ id: string }>("SELECT id FROM ops.gang_members WHERE gang_id = $1 AND active", [c.gang_id])).rows;
-    if (!members.length && priced.totalPence > 0) errors.push("Add the people in your gang before you split the claim. They do not get a login.");
+    if (!officeEntered && !members.length && priced.totalPence > 0) errors.push("Add the people in your gang before you split the claim. They do not get a login.");
     try {
-      if (!errors.length) await writeMemberSplits(db, user.id, c, priced.totalPence, split);
+      if (!errors.length && !(officeEntered && split.length === 0)) await writeMemberSplits(db, user.id, c, priced.totalPence, split);
     } catch (e) {
       if (e instanceof MemberSplitError) errors.push(e.message);
       else throw e;
