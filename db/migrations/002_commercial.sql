@@ -115,40 +115,61 @@ JOIN ops.claims c ON c.id = l.claim_id
 WHERE commercial.is_named_user();
 
 -- Privileges -------------------------------------------------------------------
+-- Grants are skipped when the role does not exist yet (shared-owner fallback).
+-- A normal Render boot creates the roles first, so these grants still run.
 
 REVOKE ALL ON SCHEMA ops, commercial FROM PUBLIC;
-
--- Operational login: full use of ops, NOTHING in commercial.
-GRANT USAGE ON SCHEMA ops TO ks_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ops TO ks_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ops TO ks_app;
--- The audit trail and pay-less history are append-only for the app.
-REVOKE UPDATE, DELETE ON ops.audit_log, ops.adjustments, ops.approvals FROM ks_app;
-
--- Commercial login: read ops for joins, read and write commercial data, but
--- only through row-level security tied to the named list.
-GRANT USAGE ON SCHEMA ops, commercial TO ks_commercial;
-GRANT SELECT ON ALL TABLES IN SCHEMA ops TO ks_commercial;
-GRANT SELECT ON commercial.access_list TO ks_commercial;
-GRANT SELECT, INSERT, UPDATE, DELETE ON commercial.client_rates, commercial.client_lift_values,
-  commercial.client_supervision_charges TO ks_commercial;
-GRANT SELECT ON commercial.claim_line_values TO ks_commercial;
-GRANT INSERT ON commercial.access_log TO ks_commercial;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA commercial TO ks_commercial;
-GRANT EXECUTE ON FUNCTION commercial.is_named_user() TO ks_commercial;
--- Changes to the named list are made only by the owner (scripts/commercial-access.ts).
-
 ALTER TABLE commercial.client_rates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commercial.client_lift_values ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commercial.client_supervision_charges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commercial.access_log ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY named_only ON commercial.client_rates FOR ALL TO ks_commercial
-  USING (commercial.is_named_user()) WITH CHECK (commercial.is_named_user());
-CREATE POLICY named_only ON commercial.client_lift_values FOR ALL TO ks_commercial
-  USING (commercial.is_named_user()) WITH CHECK (commercial.is_named_user());
-CREATE POLICY named_only ON commercial.client_supervision_charges FOR ALL TO ks_commercial
-  USING (commercial.is_named_user()) WITH CHECK (commercial.is_named_user());
-CREATE POLICY named_insert ON commercial.access_log FOR INSERT TO ks_commercial
-  WITH CHECK (commercial.is_named_user()
-              AND user_id = nullif(current_setting('ks.user_id', true), '')::uuid);
+DO $priv$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ks_app') THEN
+    -- Operational login: full use of ops, NOTHING in commercial.
+    GRANT USAGE ON SCHEMA ops TO ks_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ops TO ks_app;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ops TO ks_app;
+    -- The audit trail and pay-less history are append-only for the app.
+    REVOKE UPDATE, DELETE ON ops.audit_log, ops.adjustments, ops.approvals FROM ks_app;
+  ELSE
+    RAISE NOTICE 'ks_app is absent; operational grants skipped';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ks_commercial') THEN
+    -- Commercial login: read ops for joins, read and write commercial data, but
+    -- only through row-level security tied to the named list.
+    GRANT USAGE ON SCHEMA ops, commercial TO ks_commercial;
+    GRANT SELECT ON ALL TABLES IN SCHEMA ops TO ks_commercial;
+    GRANT SELECT ON commercial.access_list TO ks_commercial;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON commercial.client_rates, commercial.client_lift_values,
+      commercial.client_supervision_charges TO ks_commercial;
+    GRANT SELECT ON commercial.claim_line_values TO ks_commercial;
+    GRANT INSERT ON commercial.access_log TO ks_commercial;
+    GRANT USAGE ON ALL SEQUENCES IN SCHEMA commercial TO ks_commercial;
+    GRANT EXECUTE ON FUNCTION commercial.is_named_user() TO ks_commercial;
+    -- Changes to the named list are made only by the owner (scripts/commercial-access.ts).
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'commercial' AND tablename = 'client_rates' AND policyname = 'named_only') THEN
+      CREATE POLICY named_only ON commercial.client_rates FOR ALL TO ks_commercial
+        USING (commercial.is_named_user()) WITH CHECK (commercial.is_named_user());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'commercial' AND tablename = 'client_lift_values' AND policyname = 'named_only') THEN
+      CREATE POLICY named_only ON commercial.client_lift_values FOR ALL TO ks_commercial
+        USING (commercial.is_named_user()) WITH CHECK (commercial.is_named_user());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'commercial' AND tablename = 'client_supervision_charges' AND policyname = 'named_only') THEN
+      CREATE POLICY named_only ON commercial.client_supervision_charges FOR ALL TO ks_commercial
+        USING (commercial.is_named_user()) WITH CHECK (commercial.is_named_user());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'commercial' AND tablename = 'access_log' AND policyname = 'named_insert') THEN
+      CREATE POLICY named_insert ON commercial.access_log FOR INSERT TO ks_commercial
+        WITH CHECK (commercial.is_named_user()
+                    AND user_id = nullif(current_setting('ks.user_id', true), '')::uuid);
+    END IF;
+  ELSE
+    RAISE NOTICE 'ks_commercial is absent; commercial grants skipped';
+  END IF;
+END
+$priv$;
