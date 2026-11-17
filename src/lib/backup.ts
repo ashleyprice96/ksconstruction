@@ -25,7 +25,7 @@ export async function packClaims(clientId: string, from: string, to: string): Pr
        (SELECT max(a.created_at) FROM ops.approvals a WHERE a.claim_id = c.id AND a.action = 'approve') AS approved_at, c.notes
      FROM ops.claims c JOIN ops.sites s ON s.id = c.site_id JOIN ops.job_numbers j ON j.id = c.job_number_id JOIN ops.gangs g ON g.id = c.gang_id
      LEFT JOIN ops.plots p ON p.id = c.plot_id LEFT JOIN ops.house_types h ON h.id = p.house_type_id LEFT JOIN ops.foreman_signatures fs ON fs.claim_id = c.id
-     WHERE c.client_id = $1 AND c.week_ending BETWEEN $2 AND $3 AND c.status IN ('approved', 'paid')
+     WHERE c.client_id = $1 AND c.deleted_at IS NULL AND c.week_ending BETWEEN $2 AND $3 AND c.status IN ('approved', 'paid')
      ORDER BY c.week_ending, s.name, j.code, p.plot_number, c.ref`, [clientId, from, to]);
 }
 

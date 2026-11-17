@@ -2,14 +2,18 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser, isManager } from "@/lib/auth";
 import { q, q1 } from "@/lib/db";
-import { approveClaim, assignPayRun, addTopSheets, loadClaim, reduceLine, returnClaim, ClaimError } from "@/lib/claims";
+import { approveClaim, assignPayRun, addTopSheets, claimEditLock, deleteBlockReason, deleteClaim, loadClaim, reduceLine, returnClaim, ClaimError } from "@/lib/claims";
+import { gangMembers, memberSplitsFor, updateMemberSplit, MemberSplitError, type SplitRequest } from "@/lib/members";
 import { claimContext, STATUS_LABEL, TYPE_LABEL } from "@/lib/lookups";
 import { back, safeMessage, str } from "@/lib/forms";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
-import { gbp, gbpRate } from "@/lib/money";
+import { gbp, gbpRate, toPence } from "@/lib/money";
 import { settings } from "@/lib/settings";
 import ClaimSummary from "@/components/ClaimSummary";
 import TopSheetScanner from "@/components/TopSheetScanner";
+import SplitForm from "@/components/SplitForm";
+import DeleteClaimDialog from "@/components/DeleteClaimDialog";
+import { claimFieldEdits, officeSetQuantity, officeUpdateDetails, unapproveClaim } from "@/lib/office-edit";
 import Flash from "@/components/Flash";
 import { listTopSheets } from "@/lib/attachments";
 
@@ -47,6 +51,56 @@ async function saveTopSheet(f: FormData) {
   back(`/claims/${id}`, "ok", "Top sheet saved.");
 }
 
+async function saveSplit(f: FormData) {
+  "use server";
+  const user = await requireUser(["gang"]);
+  const id = str(f, "claim_id");
+  const basis = str(f, "basis") === "percent" ? "percent" : "amount";
+  const rows: SplitRequest[] = [];
+  for (const [k, v] of f.entries()) {
+    if (!k.startsWith("split_") || String(v).trim() === "") continue;
+    rows.push({ memberId: k.slice(6), basis, value: basis === "percent" ? Number(v) : toPence(String(v)) });
+  }
+  try { await updateMemberSplit(user, id, rows); }
+  catch (e) { back(`/claims/${id}`, "error", safeMessage(e, [MemberSplitError])); }
+  back(`/claims/${id}`, "ok", "Split saved.");
+}
+async function removeClaim(f: FormData) {
+  "use server";
+  const user = await requireUser();
+  const id = str(f, "claim_id");
+  try { await deleteClaim(user, id, str(f, "reason"), f.get("confirm") === "on"); }
+  catch (e) { back(`/claims/${id}`, "error", safeMessage(e, [ClaimError])); }
+  redirect("/claims?ok=Claim%20deleted.");
+}
+async function correctLine(f: FormData) {
+  "use server";
+  const user = await requireUser(["management", "admin"]);
+  const id = str(f, "claim_id");
+  try { await officeSetQuantity(user, id, str(f, "line_id"), Number(str(f, "quantity")), str(f, "reason")); }
+  catch (e) { back(`/claims/${id}`, "error", safeMessage(e, [ClaimError])); }
+  back(`/claims/${id}`, "ok", "Correction saved.");
+}
+async function correctDetails(f: FormData) {
+  "use server";
+  const user = await requireUser(["management", "admin"]);
+  const id = str(f, "claim_id");
+  try {
+    await officeUpdateDetails(user, id, {
+      siteId: str(f, "site_id"), jobNumberId: str(f, "job_id"), plotId: str(f, "plot_id") || null,
+      notes: str(f, "notes"), reason: str(f, "reason"),
+    });
+  } catch (e) { back(`/claims/${id}`, "error", safeMessage(e, [ClaimError])); }
+  back(`/claims/${id}`, "ok", "Claim details corrected.");
+}
+async function unapprove(f: FormData) {
+  "use server";
+  const user = await requireUser(["management", "admin"]);
+  const id = str(f, "claim_id");
+  try { await unapproveClaim(user, id, str(f, "reason")); }
+  catch (e) { back(`/claims/${id}`, "error", safeMessage(e, [ClaimError])); }
+  back(`/claims/${id}`, "ok", "Claim un-approved. You can edit it now.");
+}
 async function setRun(f: FormData) {
   "use server";
   const user = await requireUser(["management", "admin"]);
@@ -77,6 +131,17 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
   const splits = showSplits ? await q<{ name: string; legal_name: string; amount: string; original_amount: string | null }>(
     `SELECT p.name, p.legal_name, s.amount, s.original_amount FROM ops.splits s JOIN ops.payees p ON p.id = s.payee_id WHERE s.claim_id = $1 ORDER BY p.name`, [id]) : [];
   const sheets = await listTopSheets(id);
+  const memberSplit = (mgr || user.role === "gang") ? await memberSplitsFor(user, id).catch(() => []) : [];
+  const members = user.role === "gang" && user.gang_id ? await gangMembers(user.gang_id) : [];
+  const claimValue = await q1<{ t: string }>("SELECT coalesce(sum(gang_value), 0)::text AS t FROM ops.claim_lines WHERE claim_id = $1", [id]);
+  const canEditSplit = user.role === "gang" && (c.status === "awaiting_management" || c.status === "returned");
+  const deleteReason = (user.role === "gang" || mgr) ? await deleteBlockReason(user, c) : null;
+  const editLock = mgr ? await claimEditLock(c) : null;
+  const edits = await claimFieldEdits(id);
+  const officeLines = mgr ? await q<{ id: string; description: string; quantity: string; unit: string }>(
+    "SELECT id, description, quantity::text, unit FROM ops.claim_lines WHERE claim_id = $1 ORDER BY description", [id]) : [];
+  const officeSites = mgr && !editLock ? await q<{ id: string; name: string }>("SELECT id, name FROM ops.sites WHERE active ORDER BY name") : [];
+  const officeJobs = mgr && !editLock ? await q<{ id: string; code: string; site_id: string }>("SELECT id, code, site_id FROM ops.job_numbers WHERE active ORDER BY code") : [];
 
   return (
     <>
@@ -125,7 +190,7 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
             ))}
           </div>
         )}
-        {mgr && <TopSheetScanner action={saveTopSheet} claimId={id} />}
+        {mgr && !editLock && <TopSheetScanner action={saveTopSheet} claimId={id} />}
       </div>
 
       <h2>Work and evidence</h2>
@@ -142,6 +207,28 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
         ) : <p className="muted" style={{ margin: 0 }}>Not signed.</p>}
       </div>
 
+      <h2>Gang split</h2>
+      <div className="card" data-testid="approval-splits">
+        {memberSplit.some((s) => s.needs_confirm) && <div className="alert warn">The claim value changed. Confirm the split again.</div>}
+        {memberSplit.length === 0 && <p className="muted" style={{ marginTop: 0 }}>No split recorded yet.</p>}
+        {memberSplit.length > 0 && (
+          <div className="table-wrap dense"><table>
+            <thead><tr><th>Person</th><th>Basis</th><th className="num">Percent</th><th className="num">Amount</th></tr></thead>
+            <tbody>{memberSplit.map((s) => (
+              <tr key={s.member_id}><td>{s.name}</td><td>{s.basis === "percent" ? "Percentage" : "Amount"}</td>
+                <td className="num">{s.percent ? `${s.percent}%` : "—"}</td><td className="num">{gbp(s.amount)}</td></tr>
+            ))}</tbody>
+          </table></div>
+        )}
+        {canEditSplit && (
+          <form action={saveSplit} className="stack" style={{ marginTop: 12 }}>
+            <input type="hidden" name="claim_id" value={id} />
+            <SplitForm totalPence={toPence(claimValue?.t ?? 0)} members={members} existing={{}} disabled={false} />
+            <button className="btn" type="submit">Save split</button>
+          </form>
+        )}
+      </div>
+
       {showSplits && splits.length > 0 && (
         <>
           <h2>Split</h2>
@@ -155,7 +242,56 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
         </>
       )}
 
+      {edits.length > 0 && (
+        <div className="card" data-testid="edit-audit">
+          <h2 style={{ marginTop: 0 }}>Corrections</h2>
+          <p className="small muted">K-S changed this claim. Each change records who made it and the previous value.</p>
+          <div className="table-wrap dense"><table>
+            <thead><tr><th>When</th><th>Field</th><th>From</th><th>To</th><th>By</th><th>Reason</th></tr></thead>
+            <tbody>{edits.map((e, i) => (
+              <tr key={i}><td>{fmtDateTime(e.at)}</td><td>{e.field}</td><td>{e.old_value}</td><td>{e.new_value}</td><td>{e.who}</td><td>{e.reason || "—"}</td></tr>
+            ))}</tbody>
+          </table></div>
+        </div>
+      )}
+      {mgr && editLock && <div className="alert warn" data-testid="edit-locked">{editLock}</div>}
+      {mgr && c.status === "approved" && editLock === "Un-approve this claim before editing it." && (
+        <form action={unapprove} className="card stack">
+          <h2 style={{ marginTop: 0 }}>Un-approve</h2>
+          <input type="hidden" name="claim_id" value={id} />
+          <div><label htmlFor="un_reason">Reason (optional)</label><input id="un_reason" name="reason" type="text" maxLength={500} /></div>
+          <button className="btn secondary" type="submit">Un-approve to edit</button>
+        </form>
+      )}
+      {mgr && !editLock && (
+        <div className="card stack" data-testid="office-edit">
+          <h2 style={{ marginTop: 0 }}>Correct this claim</h2>
+          <p className="small muted">Gang pay rates only. Client prices are not shown here.</p>
+          {officeLines.map((line) => (
+            <form key={line.id} action={correctLine} className="row" style={{ alignItems: "end" }}>
+              <input type="hidden" name="claim_id" value={id} />
+              <input type="hidden" name="line_id" value={line.id} />
+              <div style={{ flex: 1 }}><label htmlFor={`q_${line.id}`}>{line.description}</label>
+                <input id={`q_${line.id}`} name="quantity" type="number" min="0" step="any" defaultValue={Number(line.quantity)} /></div>
+              <div><label htmlFor={`why_${line.id}`}>Reason</label><input id={`why_${line.id}`} name="reason" type="text" maxLength={500} /></div>
+              <button className="btn secondary small" type="submit">Save</button>
+            </form>
+          ))}
+          <form action={correctDetails} className="stack">
+            <input type="hidden" name="claim_id" value={id} />
+            <div className="row">
+              <div><label htmlFor="edit_site">Site</label><select id="edit_site" name="site_id" defaultValue={c.site_id}>{officeSites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div><label htmlFor="edit_job">Job</label><select id="edit_job" name="job_id" defaultValue={c.job_number_id}>{officeJobs.filter((j) => j.site_id === c.site_id).map((j) => <option key={j.id} value={j.id}>{j.code}</option>)}</select></div>
+            </div>
+            <input type="hidden" name="plot_id" value={c.plot_id ?? ""} />
+            <div><label htmlFor="edit_notes">Notes</label><textarea id="edit_notes" name="notes" defaultValue={c.notes} maxLength={2000} /></div>
+            <div><label htmlFor="edit_reason">Reason (optional)</label><input id="edit_reason" name="reason" type="text" maxLength={500} /></div>
+            <button className="btn secondary" type="submit">Save site and notes</button>
+          </form>
+        </div>
+      )}
       {mgr && <ManagementPanel claimId={id} status={c.status} paylessOpen={!run || run.open} hasRun={!!run} />}
+      {(user.role === "gang" || mgr) && <DeleteClaimDialog action={removeClaim} claimId={id} blocked={deleteReason} />}
     </>
   );
 }

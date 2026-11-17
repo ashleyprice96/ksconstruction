@@ -64,7 +64,7 @@ export default async function Quantities({ params, searchParams }: { params: Pro
     ? await q<{ id: string; name: string; is_patch: boolean; claimed: string }>(
         `SELECT l.id, l.name, l.is_patch,
            (SELECT coalesce(sum(o.quantity), 0) FROM ops.claim_lines o JOIN ops.claims oc ON oc.id = o.claim_id
-             WHERE o.lift_id = l.id AND oc.plot_id = $2 AND oc.id <> $3 AND oc.status IN ('awaiting_management', 'approved', 'paid')) AS claimed
+             WHERE o.lift_id = l.id AND oc.plot_id = $2 AND oc.id <> $3 AND oc.deleted_at IS NULL AND oc.status IN ('awaiting_management', 'approved', 'paid')) AS claimed
          FROM ops.lifts l WHERE l.house_type_id = $1 ORDER BY l.sort, l.name`, [ctx.house_type_id, c.plot_id, id])
     : [];
   const sups = c.claim_type === "supervision"

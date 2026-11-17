@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { createDraft, ClaimError, type ClaimType } from "@/lib/claims";
+import { RamsRequiredError } from "@/lib/rams";
 import { jobOptions, plotOptions } from "@/lib/lookups";
 import { gangLiftCard, gangRateCard } from "@/lib/rates";
 import { back, safeMessage, str } from "@/lib/forms";
@@ -20,6 +21,7 @@ async function create(f: FormData) {
       claimType: str(f, "type") as ClaimType, workDate: str(f, "work_date"), stage: str(f, "stage"),
     });
   } catch (e) {
+    if (e instanceof RamsRequiredError) redirect(`/safety/rams/${e.siteId}?next=/claims/new`);
     back("/claims/new", "error", safeMessage(e, [ClaimError]));
   }
   redirect(`/claims/${id}/quantities`);

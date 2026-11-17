@@ -8,6 +8,8 @@ import { q, tx } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { changeLogin, createUser, importEligibility, resetPassword, setUserActive, addSiteRate, addSiteLiftValue, AdminError } from "@/lib/admin";
 import { publishSafetyAlert, safetyRoster, setSafetyAlertActive, SafetyError } from "@/lib/safety";
+import { publishRams, ramsRoster } from "@/lib/rams";
+import { deletedClaims, restoreClaim, ClaimError } from "@/lib/claims";
 import { back, safeMessage, str } from "@/lib/forms";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { gbp } from "@/lib/money";
@@ -22,7 +24,7 @@ async function runAct(section: string, f: FormData, fn: (user: User) => Promise<
   try { msg = await fn(user); }
   catch (e) {
     const pgUnique = e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505";
-    back(`${P}?s=${section}`, "error", pgUnique ? "That already exists." : safeMessage(e, [AdminError, MarginAccessError, NotNamedUser, SafetyError]));
+    back(`${P}?s=${section}`, "error", pgUnique ? "That already exists." : safeMessage(e, [AdminError, MarginAccessError, NotNamedUser, SafetyError, ClaimError]));
   }
   back(`${P}?s=${section}`, "ok", msg);
 }
@@ -293,13 +295,40 @@ async function publishAlert(f: FormData) {
   "use server";
   await runAct("safety", f, async (u) => {
     const file = f.get("attachment");
+    const kind = str(f, "kind") === "toolbox" ? "toolbox" : "alert";
     await publishSafetyAlert(u, {
+      kind,
       title: str(f, "title"),
       body: str(f, "body"),
       active: f.get("active") === "on",
+      dueOn: str(f, "due_on"),
+      siteIds: f.getAll("site_id").map(String),
       file: file instanceof File ? file : null,
     });
-    return "Health and safety alert published. Gang leads must confirm it before they can continue.";
+    return kind === "toolbox"
+      ? "Toolbox talk published. Gang leads must open it and confirm before they can continue."
+      : "Health and safety alert published. Gang leads must confirm it before they can continue.";
+  });
+}
+async function publishRamsDoc(f: FormData) {
+  "use server";
+  await runAct("safety", f, async (u) => {
+    const file = f.get("pdf");
+    await publishRams(u, {
+      siteId: str(f, "site_id"),
+      title: str(f, "title"),
+      revision: str(f, "revision"),
+      active: f.get("active") === "on",
+      file: file instanceof File ? file : new File([], ""),
+    });
+    return "RAMS published. Gang leads must confirm this revision before they claim on that site.";
+  });
+}
+async function restoreDeleted(f: FormData) {
+  "use server";
+  await runAct("deleted", f, async (u) => {
+    await restoreClaim(u, str(f, "claim_id"));
+    return "Claim restored.";
   });
 }
 async function toggleAlert(f: FormData) {
@@ -311,7 +340,7 @@ async function toggleAlert(f: FormData) {
   });
 }
 
-const TABS = { sites: "Sites and plots", gangs: "Gangs and payees", users: "Users", safety: "Health and safety", settings: "Settings", margin: "Margin access" } as const;
+const TABS = { sites: "Sites and plots", gangs: "Gangs and payees", users: "Users", safety: "Health and safety", deleted: "Deleted claims", settings: "Settings", margin: "Margin access" } as const;
 
 export default async function Setup({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const user = await requireUser(["management", "admin"]);
@@ -328,7 +357,8 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       {s === "sites" && <SitesTab />}
       {s === "gangs" && <GangsTab />}
       {s === "users" && <UsersTab user={user} />}
-      {s === "safety" && <SafetyTab />}
+      {s === "safety" && <SafetyTab admin={user.role === "admin"} />}
+      {s === "deleted" && <DeletedTab />}
       {s === "settings" && <SettingsTab />}
       {s === "margin" && namedAdmin && <MarginTab actor={user} />}
     </>
@@ -652,54 +682,136 @@ async function MarginTab({ actor }: { actor: User }) {
   );
 }
 
-async function SafetyTab() {
-  const alerts = await safetyRoster();
+async function SafetyTab({ admin }: { admin: boolean }) {
+  const [alerts, rams, sites] = await Promise.all([
+    safetyRoster(),
+    ramsRoster(),
+    q<{ id: string; name: string }>("SELECT id, name FROM ops.sites WHERE active ORDER BY name"),
+  ]);
   return (
     <>
-      <form action={publishAlert} className="card stack">
-        <h2 style={{ marginTop: 0 }}>Publish a health and safety alert</h2>
-        <p className="small muted">Gang leads cannot use the app until they confirm every active alert. A new alert blocks them again, including people who confirmed an earlier one.</p>
-        <div><label htmlFor="hs_title">Title</label><input id="hs_title" name="title" type="text" required maxLength={200} /></div>
-        <div><label htmlFor="hs_body">Alert</label><textarea id="hs_body" name="body" required maxLength={10000} /></div>
-        <div><label htmlFor="hs_file">Attachment (optional PDF or image)</label><input id="hs_file" name="attachment" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" /></div>
-        <label className="check"><input type="checkbox" name="active" defaultChecked /> Active — gang leads must confirm this before they can continue</label>
-        <button className="btn" type="submit">Publish alert</button>
-      </form>
+      <p className="small"><a href="/api/safety/export">Download alert and toolbox CSV</a> · <a href="/api/rams/export">Download RAMS CSV</a></p>
+      {admin ? (
+        <>
+          <form action={publishAlert} className="card stack">
+            <h2 style={{ marginTop: 0 }}>Publish an alert or toolbox talk</h2>
+            <p className="small muted">Only an administrator publishes these. Gang leads cannot use the app until they confirm every active item aimed at them. A toolbox talk also records who attended.</p>
+            <div className="row">
+              <div><label htmlFor="hs_kind">Type</label><select id="hs_kind" name="kind"><option value="alert">H&amp;S alert</option><option value="toolbox">Toolbox talk</option></select></div>
+              <div><label htmlFor="hs_due">Due date (optional)</label><input id="hs_due" name="due_on" type="date" /></div>
+            </div>
+            <div><label htmlFor="hs_title">Title</label><input id="hs_title" name="title" type="text" required maxLength={200} /></div>
+            <div><label htmlFor="hs_body">Text (optional if you attach a PDF)</label><textarea id="hs_body" name="body" maxLength={10000} /></div>
+            <div><label htmlFor="hs_file">PDF</label><input id="hs_file" name="attachment" type="file" accept="application/pdf" /></div>
+            <div><label htmlFor="hs_sites">Sites (leave unselected for every site)</label>
+              <select id="hs_sites" name="site_id" multiple size={4}>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <label className="check"><input type="checkbox" name="active" defaultChecked /> Active</label>
+            <button className="btn" type="submit">Publish</button>
+          </form>
+          <form action={publishRamsDoc} className="card stack">
+            <h2 style={{ marginTop: 0 }}>Publish site RAMS</h2>
+            <p className="small muted">A gang lead must read and sign the current RAMS, and tick who was briefed, before they can create or submit a claim on that site. A new revision has to be confirmed again.</p>
+            <div className="row">
+              <div><label htmlFor="rams_site">Site</label><select id="rams_site" name="site_id" required><option value="">Choose a site</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div><label htmlFor="rams_rev">Revision</label><input id="rams_rev" name="revision" type="text" required maxLength={40} placeholder="For example, 2" /></div>
+            </div>
+            <div><label htmlFor="rams_title">Title</label><input id="rams_title" name="title" type="text" required maxLength={200} /></div>
+            <div><label htmlFor="rams_pdf">PDF</label><input id="rams_pdf" name="pdf" type="file" accept="application/pdf" required /></div>
+            <label className="check"><input type="checkbox" name="active" defaultChecked /> Active</label>
+            <button className="btn" type="submit">Publish RAMS</button>
+          </form>
+        </>
+      ) : <p className="muted">Only an administrator can publish health and safety documents.</p>}
       <div data-testid="hs-ack-list">
-        {alerts.length === 0 && <p className="muted">No health and safety alerts yet.</p>}
+        {alerts.length === 0 && <p className="muted">No alerts or toolbox talks yet.</p>}
         {alerts.map((a) => (
           <div key={a.id} className="card">
             <div className="split">
               <div>
-                <div className="eyebrow">{fmtDateTime(a.published_at)}{a.attachment_name ? ` · ${a.attachment_name}` : ""}</div>
+                <div className="eyebrow">{a.kind === "toolbox" ? "Toolbox talk" : "H&S alert"} · {fmtDateTime(a.published_at)}{a.sites ? ` · ${a.sites}` : " · All sites"}</div>
                 <h3 style={{ margin: "4px 0" }}>{a.title}</h3>
               </div>
               <span className={`badge ${a.active ? "submitted" : "draft"}`}>{a.active ? "Active" : "Off"}</span>
             </div>
-            <p style={{ whiteSpace: "pre-line" }}>{a.body}</p>
+            <p className="small"><a href={`/api/safety/${a.id}/record`}>Signed record (PDF)</a></p>
             <div className="table-wrap dense">
               <table>
-                <thead><tr><th>Gang lead</th><th>Confirmed</th><th>When</th></tr></thead>
+                <thead><tr><th>Gang lead</th><th>Confirmed</th><th>When</th><th>Signature</th><th>Attendees</th></tr></thead>
                 <tbody>
                   {a.people.map((p) => (
-                    <tr key={p.name}>
+                    <tr key={p.user_id}>
                       <td>{p.name}</td>
                       <td>{p.acknowledged_at ? <span className="badge approved">Confirmed</span> : <span className="badge flagged">Not yet</span>}</td>
                       <td>{p.acknowledged_at ? fmtDateTime(p.acknowledged_at) : "—"}</td>
+                      <td>{p.signed ? <img src={`/api/safety/signature/${a.id}/${p.user_id}`} alt={`Signature of ${p.name}`} style={{ height: 36, background: "#fff" }} /> : "—"}{p.signature_name ? <div className="small">{p.signature_name}</div> : null}</td>
+                      <td>{p.attendees ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <form action={toggleAlert} style={{ marginTop: 12 }}>
-              <input type="hidden" name="alert_id" value={a.id} />
-              <input type="hidden" name="make_active" value={a.active ? "0" : "1"} />
-              <button className="btn ghost small" type="submit">{a.active ? "Turn off" : "Turn on"}</button>
-            </form>
+            {admin && (
+              <form action={toggleAlert} style={{ marginTop: 12 }}>
+                <input type="hidden" name="alert_id" value={a.id} />
+                <input type="hidden" name="make_active" value={a.active ? "0" : "1"} />
+                <button className="btn ghost small" type="submit">{a.active ? "Turn off" : "Turn on"}</button>
+              </form>
+            )}
+          </div>
+        ))}
+      </div>
+      <div data-testid="rams-ack-list">
+        <h2>Site RAMS</h2>
+        {rams.length === 0 && <p className="muted">No RAMS yet.</p>}
+        {rams.map((r) => (
+          <div key={r.id} className="card">
+            <div className="eyebrow">{r.site} · revision {r.revision} · {fmtDateTime(r.published_at)}</div>
+            <h3 style={{ margin: "4px 0" }}>{r.title} {r.active ? <span className="badge submitted">Active</span> : <span className="badge draft">Off</span>}</h3>
+            <p className="small"><a href={`/api/rams/${r.id}/record`}>Signed record (PDF)</a></p>
+            <div className="table-wrap dense">
+              <table>
+                <thead><tr><th>Gang lead</th><th>Confirmed</th><th>When</th><th>Signature</th><th>Briefed</th></tr></thead>
+                <tbody>
+                  {r.people.map((p) => (
+                    <tr key={p.user_id}>
+                      <td>{p.name}</td>
+                      <td>{p.acknowledged_at ? <span className="badge approved">Confirmed</span> : <span className="badge flagged">Not yet</span>}</td>
+                      <td>{p.acknowledged_at ? fmtDateTime(p.acknowledged_at) : "—"}</td>
+                      <td>{p.signed ? p.signature_name : "—"}</td>
+                      <td>{p.attendees ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ))}
       </div>
     </>
+  );
+}
+
+async function DeletedTab() {
+  const rows = await deletedClaims();
+  return (
+    <div data-testid="deleted-claims">
+      <p className="small muted">Deleted claims stay out of the lists and no longer use a lift allowance. Restoring one puts it back.</p>
+      {rows.length === 0 && <p className="muted">No deleted claims.</p>}
+      {rows.length > 0 && (
+        <div className="table-wrap dense"><table>
+          <thead><tr><th>Claim</th><th>Gang</th><th>Status</th><th>Deleted</th><th>By</th><th>Reason</th><th></th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td>{r.ref}</td><td>{r.gang}</td><td>{r.status}</td>
+                <td>{fmtDateTime(r.deleted_at)}</td><td>{r.deleted_by}</td><td>{r.delete_reason}</td>
+                <td><form action={restoreDeleted}><input type="hidden" name="claim_id" value={r.id} /><button className="btn ghost small" type="submit">Restore</button></form></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
+    </div>
   );
 }
 

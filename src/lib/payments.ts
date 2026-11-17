@@ -8,6 +8,7 @@ import type { User } from "./auth";
 import { audit } from "./audit";
 import { settings } from "./settings";
 import { fmtDate } from "./dates";
+import { runMemberSplits } from "./members";
 
 // Everything in this module is built from the operational schema only.
 // It cannot include client rates, client values or margin: the login it uses
@@ -33,7 +34,7 @@ export async function createPayRun(user: User, paymentDate: string, firstWeekEnd
     [paymentDate, firstWeekEnding, lastWeekEnding, days]);
   await audit(user.id, "pay_run", r!.id, "created", { paymentDate, firstWeekEnding, lastWeekEnding });
   // Attach submitted claims whose week ending falls in the new run and have none yet.
-  await q(`UPDATE ops.claims SET pay_run_id = $1 WHERE pay_run_id IS NULL AND status IN ('awaiting_management', 'approved')
+  await q(`UPDATE ops.claims SET pay_run_id = $1 WHERE pay_run_id IS NULL AND deleted_at IS NULL AND status IN ('awaiting_management', 'approved')
            AND week_ending BETWEEN $2 AND $3`, [r!.id, firstWeekEnding, lastWeekEnding]);
   await q(`DELETE FROM ops.claim_flags f USING ops.claims c WHERE f.claim_id = c.id AND f.kind = 'no_pay_run' AND c.pay_run_id = $1`, [r!.id]);
   return r!.id;
@@ -121,7 +122,7 @@ export async function wagesWorkbook(runId: string): Promise<Buffer> {
   const run = await q1<{ payment_date: string; first: string; last: string }>(
     "SELECT to_char(payment_date, 'YYYY-MM-DD') AS payment_date, to_char(first_week_ending, 'YYYY-MM-DD') AS first, to_char(last_week_ending, 'YYYY-MM-DD') AS last FROM ops.pay_runs WHERE id = $1", [runId]);
   if (!run) throw new PayRunError("Pay run not found.");
-  const [totals, splits, dw, sup, red] = await Promise.all([payeeTotals(runId), runSplits(runId), dayworkLines(runId), supervisionLines(runId), reductionLines(runId)]);
+  const [totals, splits, dw, sup, red, members] = await Promise.all([payeeTotals(runId), runSplits(runId), dayworkLines(runId), supervisionLines(runId), reductionLines(runId), runMemberSplits(runId)]);
   const wb = new ExcelJS.Workbook();
   wb.creator = "K-S Claims";
   const header = (ws: ExcelJS.Worksheet) => {
@@ -148,6 +149,7 @@ export async function wagesWorkbook(runId: string): Promise<Buffer> {
     ["Item", "description", 22], ["Hours", "hours", 8], ["Rate", "rate", 10, true], ["Amount", "amount", 12, true], ["Client sheet", "client_sheet", 24]], dw);
   sheet("Supervision", [["Week ending", "week_ending", 12], ["Claim", "claim", 10], ["Supervisor", "supervisor", 22], ["Site", "site", 24], ["Gang", "gang", 22],
     ["Weeks", "weeks", 8], ["Weekly amount", "weekly_amount", 14, true], ["Amount", "amount", 12, true]], sup);
+  sheet("Gang members", [["Claim", "claim", 12], ["Gang", "gang", 22], ["Person", "member", 22], ["Basis", "basis", 12], ["Percent", "percent", 10], ["Amount", "amount", 12, true]], members as unknown as Record<string, unknown>[]);
   sheet("Pay-less reductions", [["Changed", "changed_at", 17], ["Claim", "claim", 10], ["Gang", "gang", 22], ["Line", "description", 24], ["Qty before", "before_quantity", 10],
     ["Qty after", "after_quantity", 10], ["Value before", "before_value", 12, true], ["Value after", "after_value", 12, true], ["Reason", "reason", 22], ["Note", "note", 40], ["By", "changed_by", 20]], red);
   const info = wb.addWorksheet("About");

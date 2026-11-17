@@ -10,6 +10,8 @@ import { resolveGangRate, resolveLiftValue } from "./rates";
 import { assertSafetyCleared } from "./safety";
 import { checkFile, saveFile } from "./files";
 import { TOP_SHEET_MAX_PAGES, checkTopSheet, topSheetCount } from "./attachments";
+import { repriceMemberSplits, writeMemberSplits, MemberSplitError, type SplitRequest } from "./members";
+import { assertRamsCleared } from "./rams";
 
 export class ClaimError extends Error {}
 
@@ -26,12 +28,26 @@ const CLAIM_COLS = `c.id, c.ref, c.gang_id, c.client_id, c.site_id, c.job_number
   to_char(c.work_date, 'YYYY-MM-DD') AS work_date, to_char(c.week_ending, 'YYYY-MM-DD') AS week_ending,
   c.pay_run_id, c.rolled_to_next_run, c.status, c.notes, c.submitted_at, c.created_at`;
 
-/** Load a claim the user may see. Gangs only see their own gang's claims. */
+/** Load a claim the user may see. Deleted claims and another gang's claims are hidden. */
 export async function loadClaim(user: User, id: string): Promise<ClaimRow> {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new ClaimError("Claim not found.");
-  const c = await q1<ClaimRow>(`SELECT ${CLAIM_COLS} FROM ops.claims c WHERE c.id = $1`, [id]);
+  const c = await q1<ClaimRow>(`SELECT ${CLAIM_COLS} FROM ops.claims c WHERE c.id = $1 AND c.deleted_at IS NULL`, [id]);
   if (!c || (user.role === "gang" && c.gang_id !== user.gang_id)) throw new ClaimError("Claim not found.");
   return c;
+}
+
+/** Lift percent already claimed on a plot, ignoring deleted claims. */
+export async function claimedLiftPercent(plotId: string, liftId: string, exceptClaimId: string | null, db?: PoolClient): Promise<number> {
+  const sql = `SELECT coalesce(sum(o.quantity), 0)::text AS claimed
+     FROM ops.claim_lines o JOIN ops.claims oc ON oc.id = o.claim_id
+     WHERE o.lift_id = $1 AND oc.plot_id = $2 AND oc.deleted_at IS NULL
+       AND oc.status IN ('awaiting_management', 'approved', 'paid')
+       AND ($3::uuid IS NULL OR oc.id <> $3)`;
+  const params = [liftId, plotId, exceptClaimId];
+  const row = db
+    ? (await db.query<{ claimed: string }>(sql, params)).rows[0]
+    : await q1<{ claimed: string }>(sql, params);
+  return Number(row?.claimed ?? 0);
 }
 
 function assertGangEditable(user: User, c: ClaimRow) {
@@ -45,6 +61,7 @@ export async function createDraft(user: User, input: {
   siteId: string; jobNumberId: string; plotId: string | null; claimType: ClaimType; workDate: string; stage: string;
 }): Promise<string> {
   await assertSafetyCleared(user);
+  await assertRamsCleared(user, input.siteId);
   if (user.role !== "gang" || !user.gang_id) throw new ClaimError("Only gang accounts create claims.");
   const site = await q1<{ client_id: string | null; active: boolean }>("SELECT client_id, active FROM ops.sites WHERE id = $1", [input.siteId]);
   if (!site || !site.active) throw new ClaimError("Choose a site from the list.");
@@ -140,7 +157,10 @@ export async function addTopSheets(user: User, claimId: string, files: File[]) {
   if (user.role === "gang") {
     await assertSafetyCleared(user);
     assertGangEditable(user, c);
-  } else if (user.role !== "management" && user.role !== "admin") {
+  } else if (user.role === "management" || user.role === "admin") {
+    const block = await claimEditLock(c);
+    if (block) throw new ClaimError(block);
+  } else {
     throw new ClaimError("Only the gang or the office can add a top sheet.");
   }
   const pages = files.filter((f) => f && f.size > 0);
@@ -245,9 +265,10 @@ export async function splitScreen(user: User, claimId: string) {
 
 // Submission: enforces everything Jordan checks by hand ------------------------------------
 
-export async function submitClaim(user: User, claimId: string, split: { payeeId: string; pence: number }[]) {
+export async function submitClaim(user: User, claimId: string, split: SplitRequest[]) {
   await assertSafetyCleared(user);
   const c = await loadClaim(user, claimId);
+  await assertRamsCleared(user, c.site_id);
   assertGangEditable(user, c);
   const [minPhotos, sigRequired, cutoff] = await Promise.all([settings.minPhotos(), settings.signatureRequired(), settings.cutoff()]);
 
@@ -278,30 +299,24 @@ export async function submitClaim(user: User, claimId: string, split: { payeeId:
     errors.push(...priced.problems);
 
     // Lifts: the cumulative claim against a lift can never exceed 100% of its value.
-    const over = (await db.query<{ description: string; claimed: string }>(
-      `SELECT l.description, (SELECT coalesce(sum(o.quantity), 0) FROM ops.claim_lines o JOIN ops.claims oc ON oc.id = o.claim_id
-          WHERE o.lift_id = l.lift_id AND oc.plot_id = $2 AND oc.id <> $1 AND oc.status IN ('awaiting_management', 'approved', 'paid')) AS claimed,
-          l.quantity
-       FROM ops.claim_lines l WHERE l.claim_id = $1 AND l.lift_id IS NOT NULL`, [claimId, c.plot_id])).rows as { description: string; claimed: string; quantity: string }[];
-    for (const o of over) {
-      if (Number(o.claimed) + Number(o.quantity) > 100) {
-        errors.push(`${o.description}: only ${Math.max(0, 100 - Number(o.claimed))}% of this lift is left to claim.`);
+    // A deleted claim does not use up that allowance.
+    const liftLines = (await db.query<{ description: string; quantity: string; lift_id: string }>(
+      "SELECT description, quantity::text, lift_id FROM ops.claim_lines WHERE claim_id = $1 AND lift_id IS NOT NULL", [claimId])).rows;
+    for (const o of liftLines) {
+      const claimed = c.plot_id ? await claimedLiftPercent(c.plot_id, o.lift_id, claimId, db) : 0;
+      if (claimed + Number(o.quantity) > 100) {
+        errors.push(`${o.description}: only ${Math.max(0, 100 - claimed)}% of this lift is left to claim.`);
       }
     }
 
-    // Split: eligible payees in this gang, never more than the claim value.
-    const payees = (await db.query<{ id: string; eligible: boolean }>("SELECT id, eligible FROM ops.payees WHERE gang_id = $1 AND active", [c.gang_id])).rows;
-    let splitTotal = 0;
-    for (const s of split) {
-      if (!Number.isInteger(s.pence) || s.pence < 0) { errors.push("Split amounts must be in pounds and pence."); break; }
-      if (s.pence === 0) continue;
-      const p = payees.find((x) => x.id === s.payeeId);
-      if (!p) { errors.push("A split is allocated to someone outside this gang."); continue; }
-      if (!p.eligible) errors.push("A split is allocated to someone who is not cleared for payment. Contact the office.");
-      splitTotal += s.pence;
+    const members = (await db.query<{ id: string }>("SELECT id FROM ops.gang_members WHERE gang_id = $1 AND active", [c.gang_id])).rows;
+    if (!members.length && priced.totalPence > 0) errors.push("Add the people in your gang before you split the claim. They do not get a login.");
+    try {
+      if (!errors.length) await writeMemberSplits(db, user.id, c, priced.totalPence, split);
+    } catch (e) {
+      if (e instanceof MemberSplitError) errors.push(e.message);
+      else throw e;
     }
-    if (splitTotal > priced.totalPence) errors.push("The split adds up to more than the claim value.");
-    if (splitTotal === 0 && priced.totalPence > 0) errors.push("Allocate the claim value between your gang members.");
 
     if (errors.length) throw new ClaimError(errors.join("\n"));
 
@@ -319,20 +334,15 @@ export async function submitClaim(user: User, claimId: string, split: { payeeId:
          ORDER BY first_week_ending LIMIT 1`, [weekEnding])).rows[0];
     }
 
-    await db.query("DELETE FROM ops.splits WHERE claim_id = $1", [claimId]);
-    for (const s of split.filter((x) => x.pence > 0)) {
-      await db.query("INSERT INTO ops.splits (claim_id, payee_id, amount) VALUES ($1, $2, $3)", [claimId, s.payeeId, fromPence(s.pence)]);
-    }
-    await db.query("DELETE FROM ops.claim_flags WHERE claim_id = $1", [claimId]);
+    await db.query("DELETE FROM ops.claim_flags WHERE claim_id = $1 AND kind <> 'split_reconfirm'", [claimId]);
     const flag = (kind: string, message: string) =>
       db.query("INSERT INTO ops.claim_flags (claim_id, kind, message) VALUES ($1, $2, $3)", [claimId, kind, message]);
-    if (splitTotal < priced.totalPence) await flag("under_allocated", `Split is ${fromPence(priced.totalPence - splitTotal)} less than the claim value.`);
     if (!run) await flag("no_pay_run", `No open pay run covers week ending ${weekEnding}. Assign one before payment.`);
     if (rolled) await flag("late", "Submitted after the cut-off for its pay run. Rolled to the next pay run.");
     // Over agreed quantity (where agreed quantities are held for the plot).
     const overQty = (await db.query<{ description: string; claimed: string; agreed: string }>(
       `SELECT l.description, (SELECT coalesce(sum(o.quantity), 0) FROM ops.claim_lines o JOIN ops.claims oc ON oc.id = o.claim_id
-          WHERE o.item_id = l.item_id AND oc.plot_id = $2 AND (oc.status IN ('awaiting_management', 'approved', 'paid') OR oc.id = $1)) AS claimed,
+          WHERE o.item_id = l.item_id AND oc.plot_id = $2 AND oc.deleted_at IS NULL AND (oc.status IN ('awaiting_management', 'approved', 'paid') OR oc.id = $1)) AS claimed,
           a.quantity AS agreed
        FROM ops.claim_lines l JOIN ops.agreed_quantities a ON a.item_id = l.item_id AND a.plot_id = $2
        WHERE l.claim_id = $1`, [claimId, c.plot_id])).rows;
@@ -343,7 +353,7 @@ export async function submitClaim(user: User, claimId: string, split: { payeeId:
     await db.query(
       `UPDATE ops.claims SET status = 'awaiting_management', submitted_at = now(), week_ending = $2, pay_run_id = $3, rolled_to_next_run = $4 WHERE id = $1`,
       [claimId, weekEnding, run?.id ?? null, rolled]);
-    await audit(user.id, "claim", claimId, "submitted", { week_ending: weekEnding, total: fromPence(priced.totalPence), split: split.map((s) => ({ payee: s.payeeId, amount: fromPence(s.pence) })) }, db);
+    await audit(user.id, "claim", claimId, "submitted", { week_ending: weekEnding, total: fromPence(priced.totalPence), split }, db);
   });
 }
 
@@ -429,7 +439,64 @@ export async function reduceLine(user: User, claimId: string, lineId: string, ne
       await db.query("UPDATE ops.splits SET original_amount = coalesce(original_amount, amount), amount = $3 WHERE claim_id = $1 AND payee_id = $2",
         [claimId, splits[i].payee_id, fromPence(scaled[i])]);
     }
+    await repriceMemberSplits(db, claimId, toPence(total), user.id);
     await audit(user.id, "claim", claimId, "payless_reduction",
       { line: lineId, before_quantity: l.quantity, after_quantity: newQuantity, before_value: l.gang_value, after_value: fromPence(newValue), reason, note }, db);
   });
+}
+
+/** Office may correct a claim until it is approved. A closed or paid pay run stays locked. */
+export async function claimEditLock(c: ClaimRow): Promise<string | null> {
+  if (c.status === "paid") return "This claim has been paid, so it is locked.";
+  if (c.pay_run_id) {
+    const run = await q1<{ status: string }>("SELECT status FROM ops.pay_runs WHERE id = $1", [c.pay_run_id]);
+    if (run && run.status !== "open") return "This pay run has been closed or paid, so the claim is locked.";
+  }
+  if (c.status === "approved") return "Un-approve this claim before editing it.";
+  return null;
+}
+
+/** Why this claim cannot be deleted, or null when the user may delete it. */
+export async function deleteBlockReason(user: User, c: ClaimRow): Promise<string | null> {
+  if (c.status === "paid") return "This claim has been paid, so it cannot be deleted.";
+  if (c.pay_run_id) {
+    const run = await q1<{ payment_date: string }>(
+      "SELECT to_char(payment_date, 'YYYY-MM-DD') AS payment_date FROM ops.pay_runs WHERE id = $1", [c.pay_run_id]);
+    return `This claim is already in a pay run${run ? ` (payment ${run.payment_date})` : ""}, so it cannot be deleted.`;
+  }
+  if (user.role === "management" || user.role === "admin") return null;
+  if (user.role !== "gang" || user.gang_id !== c.gang_id) return "Claim not found.";
+  if (c.status !== "draft" && c.status !== "awaiting_management" && c.status !== "returned") {
+    return "This claim has been confirmed, so it can no longer be deleted.";
+  }
+  return null;
+}
+
+export async function deleteClaim(user: User, claimId: string, reason: string, confirmed: boolean) {
+  if (!confirmed) throw new ClaimError("Confirm that you want to delete this claim.");
+  const why = reason.trim();
+  if (why.length < 3) throw new ClaimError("Enter a reason for deleting this claim.");
+  const c = await loadClaim(user, claimId);
+  const block = await deleteBlockReason(user, c);
+  if (block) throw new ClaimError(block);
+  await q(
+    "UPDATE ops.claims SET deleted_at = now(), deleted_by = $2, delete_reason = $3 WHERE id = $1 AND deleted_at IS NULL",
+    [claimId, user.id, why.slice(0, 500)]);
+  await audit(user.id, "claim", claimId, "deleted", { reason: why.slice(0, 500), status: c.status });
+}
+
+export async function restoreClaim(user: User, claimId: string) {
+  if (user.role !== "management" && user.role !== "admin") throw new ClaimError("Management only.");
+  if (!/^[0-9a-f-]{36}$/.test(claimId)) throw new ClaimError("Claim not found.");
+  const c = await q1<{ deleted_at: string | null }>("SELECT deleted_at FROM ops.claims WHERE id = $1", [claimId]);
+  if (!c?.deleted_at) throw new ClaimError("That claim is not deleted.");
+  await q("UPDATE ops.claims SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL WHERE id = $1", [claimId]);
+  await audit(user.id, "claim", claimId, "restored", {});
+}
+
+export async function deletedClaims() {
+  return q<{ id: string; ref: string; gang: string; status: string; deleted_at: string; deleted_by: string; delete_reason: string }>(
+    `SELECT c.id, c.ref, g.name AS gang, c.status::text AS status, c.deleted_at, u.name AS deleted_by, c.delete_reason
+     FROM ops.claims c JOIN ops.gangs g ON g.id = c.gang_id LEFT JOIN ops.users u ON u.id = c.deleted_by
+     WHERE c.deleted_at IS NOT NULL ORDER BY c.deleted_at DESC`);
 }
