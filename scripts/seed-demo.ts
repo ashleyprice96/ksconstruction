@@ -78,13 +78,13 @@ async function main() {
   await payee(gang2, "Sam Demo", "Sam Demo", "sole_trader", true, "DEMO-P4");
   await db.query("INSERT INTO ops.supervision_assignments (payee_id, site_id, weekly_amount, start_date) VALUES ($1, $2, '250.00', $3)", [p1, siteA, from]);
 
-  const user = async (email: string, name: string, role: string, gang: string | null = null) =>
-    (await one("INSERT INTO ops.users (email, name, password_hash, role, gang_id) VALUES ($1, $2, $3, $4, $5) RETURNING id", [email, name, hash, role, gang])).id;
+  const user = async (email: string, name: string, role: string, gang: string | null = null, username: string | null = null) =>
+    (await one("INSERT INTO ops.users (email, username, name, password_hash, role, gang_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id", [email, username, name, hash, role, gang])).id;
   const admin = await user("admin@demo.test", "Demo Administrator", "admin");
   const director = await user("director@demo.test", "Demo Director (named list)", "management");
   await user("manager@demo.test", "Demo Manager (not on named list)", "management");
   await user("cm@demo.test", "Demo Contracts Manager", "contracts_manager");
-  await user("gang1@demo.test", "Alex Demo", "gang", gang1);
+  await user("gang1@demo.test", "Alex Demo", "gang", gang1, "alex.demo");
   await user("gang2@demo.test", "Sam Demo", "gang", gang2);
   await db.query("INSERT INTO commercial.access_list (user_id, added_by, reason) VALUES ($1, 'seed-demo', 'Demo named-list user')", [director]);
   await db.query("INSERT INTO commercial.access_list_history (user_id, action, changed_by, reason) VALUES ($1, 'added', 'seed-demo', 'Demo named-list user')", [director]);

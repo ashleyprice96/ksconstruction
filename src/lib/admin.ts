@@ -3,6 +3,7 @@ import { q, q1 } from "./db";
 import type { User } from "./auth";
 import { audit } from "./audit";
 import { hashPassword } from "./auth";
+import { normaliseEmail, normaliseUsername } from "./usernames";
 
 export class AdminError extends Error {}
 
@@ -43,18 +44,25 @@ export async function setGangRateSets(user: User, gangId: string, baseId: string
   await audit(user.id, "gang", gangId, "rate_sets_changed", { baseId, individualId });
 }
 
-export async function createUser(user: User, input: { email: string; name: string; role: string; gangId: string | null; password: string }) {
+export async function createUser(user: User, input: { email: string; username: string; name: string; role: string; gangId: string | null; password: string }) {
   if (user.role !== "admin" && user.role !== "management") throw new AdminError("Management only.");
-  if (!input.email.includes("@") || input.name.length < 2) throw new AdminError("Enter a name and email.");
+  const email = input.email.trim() ? normaliseEmail(input.email) : null;
+  const username = input.username.trim() ? normaliseUsername(input.username) : null;
+  if (input.email.trim() && !email) throw new AdminError("Enter a valid email, or leave it blank.");
+  if (input.username.trim() && !username) throw new AdminError("Usernames use lowercase letters, digits, dots and hyphens.");
+  if (!email && !username) throw new AdminError("Enter an email or a username.");
+  if (input.name.trim().length < 2) throw new AdminError("Enter a name.");
   if (input.password.length < 10) throw new AdminError("Passwords must be at least 10 characters.");
   if (!["gang", "contracts_manager", "management", "admin"].includes(input.role)) throw new AdminError("Choose a role.");
   if (input.role === "admin" && user.role !== "admin") throw new AdminError("Only an administrator can create administrators.");
-  if (input.role === "gang" && !input.gangId) throw new AdminError("Choose the gang for a gang account.");
+  if (input.role === "gang" && !input.gangId) throw new AdminError("Choose the gang for a gang account. Pick an existing gang lead to give them a login.");
+  if (email && await q1("SELECT 1 FROM ops.users WHERE lower(email) = $1", [email])) throw new AdminError("A user with that email already exists.");
+  if (username && await q1("SELECT 1 FROM ops.users WHERE lower(username) = $1", [username])) throw new AdminError("A user with that username already exists.");
   const r = await q1<{ id: string }>(
-    "INSERT INTO ops.users (email, name, password_hash, role, gang_id) VALUES (lower($1), $2, $3, $4, $5) ON CONFLICT (email) DO NOTHING RETURNING id",
-    [input.email.trim(), input.name, await hashPassword(input.password), input.role, input.role === "gang" ? input.gangId : null]);
-  if (!r) throw new AdminError("A user with that email already exists.");
-  await audit(user.id, "user", r.id, "created", { email: input.email, role: input.role });
+    `INSERT INTO ops.users (email, username, name, password_hash, role, gang_id, must_change_password)
+     VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
+    [email, username, input.name.trim(), await hashPassword(input.password), input.role, input.role === "gang" ? input.gangId : null]);
+  await audit(user.id, "user", r!.id, "created", { email, username, role: input.role });
 }
 
 export async function resetPassword(user: User, userId: string, password: string) {
@@ -62,7 +70,7 @@ export async function resetPassword(user: User, userId: string, password: string
   if (password.length < 10) throw new AdminError("Passwords must be at least 10 characters.");
   const target = await q1<{ role: string }>("SELECT role FROM ops.users WHERE id = $1", [userId]);
   if (target?.role === "admin" && user.role !== "admin") throw new AdminError("Only an administrator can reset an administrator.");
-  await q("UPDATE ops.users SET password_hash = $2 WHERE id = $1", [userId, await hashPassword(password)]);
+  await q("UPDATE ops.users SET password_hash = $2, must_change_password = true WHERE id = $1", [userId, await hashPassword(password)]);
   await q("DELETE FROM ops.sessions WHERE user_id = $1", [userId]);
   await audit(user.id, "user", userId, "password_reset");
 }
@@ -102,13 +110,18 @@ export async function importEligibility(user: User, csv: string): Promise<{ upda
   return { updated, unmatched };
 }
 
-export async function changeLogin(user: User, userId: string, email: string, name: string) {
+export async function changeLogin(user: User, userId: string, emailRaw: string, usernameRaw: string, name: string) {
   if (user.role !== "admin" && user.role !== "management") throw new AdminError("Management only.");
-  if (!email.includes("@") || name.trim().length < 2) throw new AdminError("Enter a name and a login email.");
+  const email = emailRaw.trim() ? normaliseEmail(emailRaw) : null;
+  const username = usernameRaw.trim() ? normaliseUsername(usernameRaw) : null;
+  if (emailRaw.trim() && !email) throw new AdminError("Enter a valid email, or leave it blank.");
+  if (usernameRaw.trim() && !username) throw new AdminError("Usernames use lowercase letters, digits, dots and hyphens.");
+  if (!email && !username) throw new AdminError("Keep an email or a username.");
+  if (name.trim().length < 2) throw new AdminError("Enter a name.");
   const target = await q1<{ role: string }>("SELECT role FROM ops.users WHERE id = $1", [userId]);
   if (target?.role === "admin" && user.role !== "admin") throw new AdminError("Only an administrator can change an administrator.");
-  const clash = await q1("SELECT 1 FROM ops.users WHERE lower(email) = lower($1) AND id <> $2", [email.trim(), userId]);
-  if (clash) throw new AdminError("Another user already has that login email.");
-  await q("UPDATE ops.users SET email = lower($2), name = $3 WHERE id = $1", [userId, email.trim(), name.trim()]);
-  await audit(user.id, "user", userId, "login_changed", { email: email.trim() });
+  if (email && await q1("SELECT 1 FROM ops.users WHERE lower(email) = $1 AND id <> $2", [email, userId])) throw new AdminError("Another user already has that email.");
+  if (username && await q1("SELECT 1 FROM ops.users WHERE lower(username) = $1 AND id <> $2", [username, userId])) throw new AdminError("Another user already has that username.");
+  await q("UPDATE ops.users SET email = $2, username = $3, name = $4 WHERE id = $1", [userId, email, username, name.trim()]);
+  await audit(user.id, "user", userId, "login_changed", { email, username });
 }
