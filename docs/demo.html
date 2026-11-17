@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#211F20">
+<meta name="robots" content="noindex">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>K-S Claims Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: site-office app. Charcoal header band with an orange rule, one working column, cards only for forms and tables. */
+:root {
+  --charcoal: #211F20; --orange: #D37C46; --orange-ink: #A9551F; --orange-soft: #F8EADF;
+  --bg: #F5F2F0; --surface: #FFFFFF; --ink: #262324; --muted: #6E6668; --line: #E3DCD8; --row: #FBF8F6;
+  --ok: #2E7A4D; --ok-soft: #E2F1E7; --warn: #8F5600; --warn-soft: #FFF0D3; --bad: #B0281F; --bad-soft: #FBE3E0;
+  --head-ink: #FFFFFF; --head-muted: #CFC7C3; --nav: #2D2A2B;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", Roboto, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1A1819; --surface: #252223; --ink: #EEE8E5; --muted: #A99F9B; --line: #3A3536; --row: #2A2627;
+  --orange-ink: #E39A69; --orange-soft: #3A2A20; --ok: #6CC495; --ok-soft: #1E3327; --warn: #E5B160; --warn-soft: #3A2E17;
+  --bad: #F08A80; --bad-soft: #3D2220; --charcoal: #141213; --nav: #201D1E; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #1A1819; --surface: #252223; --ink: #EEE8E5; --muted: #A99F9B; --line: #3A3536; --row: #2A2627;
+  --orange-ink: #E39A69; --orange-soft: #3A2A20; --ok: #6CC495; --ok-soft: #1E3327; --warn: #E5B160; --warn-soft: #3A2E17;
+  --bad: #F08A80; --bad-soft: #3D2220; --charcoal: #141213; --nav: #201D1E; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--charcoal); }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1040px; margin: 0 auto; }
+header.top { background: var(--charcoal); color: var(--head-ink); border-bottom: 4px solid var(--orange); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+.bar { display: flex; align-items: center; gap: 12px; padding-block: 10px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--head-ink); }
+.brand img { width: 38px; height: 38px; }
+.brand b { font-family: var(--display); font-size: 1.35rem; letter-spacing: 0.04em; line-height: 1; }
+.brand small { display: block; font-family: var(--display); color: var(--orange); letter-spacing: 0.16em; font-size: 0.72rem; }
+.role { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--head-muted); }
+.role select { background: var(--nav); color: var(--head-ink); border: 1px solid #4A4446; border-radius: 6px; padding: 6px 8px; font: inherit; min-height: 36px; }
+nav.tabs { background: var(--nav); overflow-x: auto; }
+nav.tabs .wrap { display: flex; gap: 2px; }
+nav.tabs a { color: #E8E2DF; text-decoration: none; padding: 10px 12px; white-space: nowrap; font-weight: 600; font-size: 0.92rem; border-bottom: 3px solid transparent; }
+nav.tabs a:hover, nav.tabs a.on { color: #fff; border-bottom-color: var(--orange); }
+nav.tabs a.restricted { color: var(--orange); }
+.demo-note { background: var(--orange-soft); color: var(--ink); font-size: 0.85rem; padding-block: 8px; }
+.demo-note .wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+main { padding-block: 18px 56px; }
+h1, h2, h3 { font-family: var(--display); color: var(--ink); text-wrap: balance; line-height: 1.1; margin: 0; }
+h1 { font-size: 2rem; text-transform: uppercase; letter-spacing: 0.01em; }
+h2 { font-size: 1.35rem; margin: 26px 0 10px; }
+h3 { font-size: 1.1rem; margin: 0 0 8px; }
+.eyebrow { font-family: var(--display); color: var(--orange-ink); text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.8rem; font-weight: 700; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
+.head .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.muted { color: var(--muted); } .small { font-size: 0.86rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.card.accent { border-top: 4px solid var(--orange); }
+.stack { display: grid; gap: 16px; }
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; text-decoration: none; color: var(--ink); display: grid; gap: 2px; }
+.tile .n { font-family: var(--display); font-size: 2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.tile .l { color: var(--muted); font-size: 0.86rem; }
+.tw { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+th { background: var(--charcoal); color: #fff; text-align: left; padding: 9px 10px; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 3px solid var(--orange); white-space: nowrap; font-weight: 700; }
+td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tbody tr:nth-child(even) td { background: var(--row); }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+a { color: var(--orange-ink); }
+label { display: block; font-weight: 600; font-size: 0.92rem; margin-bottom: 4px; }
+.hint { display: block; font-weight: 400; color: var(--muted); font-size: 0.82rem; }
+input[type=text], input[type=number], input[type=date], select, textarea {
+  width: 100%; min-height: 44px; padding: 10px 12px; font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--orange); outline-offset: 1px; }
+textarea { min-height: 80px; }
+.row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.line { display: grid; grid-template-columns: 1fr 130px; gap: 10px; align-items: center; padding-block: 8px; border-bottom: 1px solid var(--line); }
+.line:last-child { border-bottom: 0; }
+.wall { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 18px; border-radius: 8px; border: 2px solid var(--orange);
+  background: var(--orange); color: #fff; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
+.btn:hover { filter: brightness(0.94); }
+.btn.ghost { background: var(--surface); color: var(--ink); border-color: var(--line); }
+.btn.danger { background: var(--bad); border-color: var(--bad); }
+.btn.sm { min-height: 34px; padding: 4px 10px; font-size: 0.86rem; }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; white-space: nowrap; background: var(--line); color: var(--ink); }
+.b-draft { background: var(--line); } .b-awaiting { background: var(--warn-soft); color: var(--warn); } .b-returned { background: var(--bad-soft); color: var(--bad); }
+.b-approved { background: var(--ok-soft); color: var(--ok); } .b-paid { background: var(--charcoal); color: #fff; } .b-flag { background: var(--bad-soft); color: var(--bad); }
+.alert { padding: 11px 14px; border-radius: 8px; border-left: 5px solid; white-space: pre-line; }
+.alert.err { background: var(--bad-soft); border-color: var(--bad); }
+.alert.ok { background: var(--ok-soft); border-color: var(--ok); }
+.alert.info { background: var(--orange-soft); border-color: var(--orange); }
+.alert.warn { background: var(--warn-soft); border-color: var(--warn); }
+.steps { display: flex; gap: 4px; overflow-x: auto; }
+.steps span { flex: 1 0 auto; text-align: center; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); font-size: 0.86rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.steps span.on { background: var(--charcoal); color: #fff; border-color: var(--charcoal); }
+.steps span.done { color: var(--ok); }
+.thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.thumbs figure { margin: 0; width: 110px; display: grid; gap: 4px; }
+.thumbs img { width: 110px; height: 82px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); background: var(--row); }
+.thumbs figcaption { font-size: 0.74rem; color: var(--muted); }
+canvas.sig { width: 100%; height: 190px; border: 2px dashed var(--line); border-radius: 8px; background: #fff; touch-action: none; display: block; }
+.total { display: flex; justify-content: space-between; font-family: var(--display); font-size: 1.3rem; font-weight: 700; padding-top: 6px; }
+.restricted { background: var(--charcoal); color: #fff; border-left: 6px solid var(--orange); padding: 10px 14px; border-radius: 8px; font-size: 0.9rem; }
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+dl.kv dt { color: var(--muted); font-size: 0.86rem; } dl.kv dd { margin: 0; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8rem; }
+details summary { cursor: pointer; font-weight: 700; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--charcoal); color: #fff; padding: 10px 16px; border-radius: 8px; border-left: 5px solid var(--orange); z-index: 20; max-width: calc(100% - 32px); }
+@media (max-width: 560px) { h1 { font-size: 1.6rem; } .line { grid-template-columns: 1fr 110px; } .role span { display: none; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+</head>
+<body>
+<header class="top">
+  <div class="gutter"><div class="wrap bar">
+    <a class="brand" href="#home"><img alt="K-S" src="data:image/png;base64,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"><span><b>K-S</b><small>CLAIMS</small></span></a>
+    <div class="role"><span>Viewing as</span>
+      <select id="role" aria-label="Viewing as">
+        <option value="gang">Gang: Demo Gang One</option>
+        <option value="cm">Contracts manager</option>
+        <option value="manager">Manager (not on named list)</option>
+        <option value="named">Director (named list)</option>
+      </select></div>
+  </div></div>
+  <nav class="tabs gutter" aria-label="Main"><div class="wrap" id="tabs"></div></nav>
+</header>
+<div class="demo-note gutter"><div class="wrap"><strong>Demo.</strong><span>Fictional data, saved only in this browser. Switch role at the top. In the real app each person has their own login and margin is locked on the server.</span><button class="btn ghost sm" id="reset" type="button">Reset demo</button></div></div>
+<main class="gutter"><div class="wrap" id="view"></div></main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+"use strict";
+// ---------- helpers ----------
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const P = (pounds) => Math.round(Number(pounds) * 100);
+const lineP = (qty, rate) => Math.round(Math.round(Number(qty) * 1000) * Math.round(Number(rate) * 10000) / 100000);
+const gbp = (pence) => (pence / 100).toLocaleString("en-GB", { style: "currency", currency: "GBP" });
+const rateFmt = (r) => Number(r).toLocaleString("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const iso = (d) => d.toISOString().slice(0, 10);
+const addDays = (s, n) => { const d = new Date(s + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
+const fmtD = (s) => s ? new Date(s.length === 10 ? s + "T12:00:00Z" : s).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/London" }) : "";
+const fmtDT = (s) => new Date(s).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+function rescale(parts, total) {
+  const old = parts.reduce((a, b) => a + b, 0);
+  if (!old) return parts.map(() => 0);
+  const raw = parts.map((p) => p * total / old), fl = raw.map(Math.floor);
+  let rem = total - fl.reduce((a, b) => a + b, 0);
+  raw.map((r, i) => ({ i, f: r - Math.floor(r) })).sort((a, b) => b.f - a.f).forEach(({ i }) => { if (rem > 0) { fl[i]++; rem--; } });
+  return fl;
+}
+// Weekly cut-off: 11:00 Friday UK time. Week ending is the Friday.
+function weekEnding(now = new Date()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now).map((x) => [x.type, x.value]));
+  const day = `${p.year}-${p.month}-${p.day}`;
+  const wd = new Date(day + "T12:00:00Z").getUTCDay();
+  let ahead = (5 - wd + 7) % 7;
+  if (ahead === 0 && Number(p.hour) * 60 + Number(p.minute) >= 660) ahead = 7;
+  return addDays(day, ahead);
+}
+
+// ---------- fictional reference data ----------
+const REF = {
+  clients: { NF: { name: "Northfield Contracting (demo)", weeks: 1, ownForms: false }, RC: { name: "Riverside Civils (demo)", weeks: 2, ownForms: true } },
+  sites: [
+    { id: "OAK", name: "Oak Lane (demo)", client: "NF", job: "DEMO-001", houseType: "Type A", plots: ["1", "2", "3", "4", "5", "6"] },
+    { id: "MILL", name: "Mill Street (demo)", client: "RC", job: "DEMO-002", houseType: "Type A", plots: ["101", "102", "103", "104"] },
+  ],
+  items: [
+    { id: "TRENCH", name: "Trench block", unit: "block", courses: true },
+    { id: "B100", name: "100 mm block", unit: "block", courses: true },
+    { id: "C140", name: "140 mm commons", unit: "brick", courses: true },
+  ],
+  lifts: [ { id: "L1", name: "1st lift" }, { id: "L2", name: "2nd lift" }, { id: "PATCH", name: "Patch" } ],
+  reasons: ["Quantity not agreed", "Work incomplete", "Defective work", "Over claim", "Other (explain in note)"],
+};
+const TYPES = { substructure: "Substructure", superstructure: "Superstructure", daywork: "Daywork", supervision: "Supervision" };
+const STATUS = { draft: ["Draft", "b-draft"], awaiting: ["Awaiting sign-off", "b-awaiting"], returned: ["Returned", "b-returned"], approved: ["Approved", "b-approved"], paid: ["Paid", "b-paid"] };
+
+function seed() {
+  const we = weekEnding();
+  const today = iso(new Date());
+  const runs = [
+    { id: "R1", first: addDays(we, -7), last: we, pay: addDays(we, 7), paylessClose: we + "T23:59:00Z", status: "open" },
+    { id: "R2", first: addDays(we, 7), last: addDays(we, 14), pay: addDays(we, 21), paylessClose: addDays(we, 14) + "T23:59:00Z", status: "open" },
+  ];
+  const s = {
+    v: 4, role: "gang", seq: 1004, invSeq: 1,
+    clients: JSON.parse(JSON.stringify(REF.clients)),
+    sites: REF.sites.map((x) => ({ ...x, plots: [...x.plots], active: true })),
+    gangs: {
+      G1: { name: "Demo Gang One", ganger: "Alex Demo", set: "STD" },
+      G2: { name: "Demo Gang Two", ganger: "Sam Demo", set: "STD", individual: "IND2" },
+    },
+    payees: [
+      { id: "P1", gang: "G1", name: "Alex Demo", legal: "Alex Demo Brickwork Ltd (demo)", entity: "Limited company", cleared: true },
+      { id: "P2", gang: "G1", name: "Jo Demo", legal: "Jo Demo", entity: "Sole trader", cleared: true },
+      { id: "P3", gang: "G1", name: "Chris Demo", legal: "Chris Demo", entity: "Sole trader", cleared: false },
+      { id: "P4", gang: "G2", name: "Sam Demo", legal: "Sam Demo", entity: "Sole trader", cleared: true },
+    ],
+    // Gang pay rates (fictional), each with an effective date. A later date is a scheduled uplift.
+    rateSets: {
+      STD: { name: "Demo Standard", kind: "Base set", rates: [
+        { item: "TRENCH", rate: 2.10, from: "2026-01-01" }, { item: "TRENCH", rate: 2.20, from: addDays(today, 60) },
+        { item: "B100", rate: 1.55, from: "2026-01-01" }, { item: "C140", rate: 1.40, from: "2026-01-01" }, { item: "DAYWORK", rate: 19.00, from: "2026-01-01" } ] },
+      RCSET: { name: "Riverside jobs (client-specific)", kind: "Client-specific", client: "RC", rates: [ { item: "C140", rate: 1.45, from: "2026-01-01" } ] },
+      IND2: { name: "Individual: Demo Gang Two", kind: "Individual agreed", rates: [ { item: "TRENCH", rate: 2.05, from: "2026-01-01" } ] },
+    },
+    liftValues: { L1: 3000, L2: 2700, PATCH: 600 },
+    supervision: [ { id: "S1", payee: "P1", site: "OAK", weekly: 250 } ],
+    // Restricted: client charge rates and values. Only the named list sees these.
+    clientRates: {
+      NF: { TRENCH: 2.85, B100: 2.05, C140: 1.85, DAYWORK: 28.00, L1: 3900, L2: 3500, PATCH: 800, SUP: 320 },
+      RC: { TRENCH: 2.95, B100: 2.10, C140: 1.95, DAYWORK: 29.50, L1: 4050, L2: 3600, PATCH: 850, SUP: 320 },
+    },
+    runs, claims: [], snags: [], audit: [], draft: null,
+  };
+  const mk = (o) => {
+    const c = Object.assign({ id: String(s.seq++), notes: "", walls: [], photos: [{ kind: "photo", name: "plot-photo.jpg", src: "" }], created: new Date().toISOString(), history: [] }, o);
+    s.claims.push(c);
+    return c;
+  };
+  const c1 = mk({ gang: "G1", site: "OAK", plot: "1", type: "substructure", workDate: addDays(we, -9), weekEnding: addDays(we, -7), run: "R1", status: "approved",
+    lines: [ { key: "TRENCH", desc: "Trench block", unit: "block", qty: 140, rate: 2.10, from: "Demo Standard" }, { key: "B100", desc: "100 mm block", unit: "block", qty: 90, rate: 1.55, from: "Demo Standard" } ],
+    walls: [ { ref: "Front A", courses: 6 }, { ref: "Side B", courses: 9 } ], foreman: { name: "Pat Foreman (demo)", at: new Date(Date.now() - 6 * 864e5).toISOString() } });
+  c1.photos.push({ kind: "drawing", name: "foundation-drawing.jpg", src: "" });
+  const c2 = mk({ gang: "G1", site: "OAK", plot: "2", type: "superstructure", workDate: addDays(we, -2), weekEnding: we, run: "R1", status: "awaiting",
+    lines: [ { key: "L1", desc: "1st lift", unit: "%", qty: 50, rate: 3000, from: "Lift value" } ], foreman: { name: "Pat Foreman (demo)", at: new Date(Date.now() - 864e5).toISOString() }, flags: [] });
+  const c3 = mk({ gang: "G2", site: "MILL", plot: "101", type: "substructure", workDate: addDays(we, -3), weekEnding: we, run: "R1", status: "awaiting",
+    lines: [ { key: "C140", desc: "140 mm commons", unit: "brick", qty: 900, rate: 1.45, from: "Riverside jobs (client-specific)" } ],
+    walls: [ { ref: "Rear", courses: 7 } ], foreman: { name: "Lee Foreman (demo)", at: new Date(Date.now() - 2 * 864e5).toISOString() }, flags: ["140 mm commons: 900 claimed against 800 agreed for this plot."] });
+  c3.photos.push({ kind: "drawing", name: "drawing.jpg", src: "" });
+  for (const c of [c1, c2, c3]) {
+    const total = c.lines.reduce((a, l) => a + val(l), 0);
+    const mine = s.payees.filter((p) => p.gang === c.gang && p.cleared);
+    c.split = Object.fromEntries(rescale(mine.map(() => 1), total).map((v, i) => [mine[i].id, v]));
+    c.history.push({ at: c.created, who: s.gangs[c.gang].ganger, what: "Submitted" });
+    if (c.status === "approved") c.history.push({ at: c.created, who: "Demo Manager", what: "Approved" });
+  }
+  s.snags.push({ id: "N1", site: "OAK", plot: "3", gang: "G1", title: "Repoint the entrance reveal (demo)", detail: "Raked joints left open on the left reveal.", status: "open", due: addDays(today, 5), updates: [] });
+  return s;
+}
+function val(l) { return l.unit === "%" ? Math.round(l.qty * P(l.rate) / 100) : lineP(l.qty, l.rate); }
+
+// ---------- state ----------
+let S;
+try { S = JSON.parse(localStorage.getItem("ks-claims-demo") || "null"); } catch { S = null; }
+if (!S || S.v !== 4) S = seed();
+function save() { try { localStorage.setItem("ks-claims-demo", JSON.stringify(S)); } catch { toast("Photos are too large to keep in this browser; the demo still works until you reload."); } }
+let msg = null;
+function toast(t) { const el = $("#toast"); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (el.hidden = true), 3500); }
+const myGang = "G1";
+const role = () => S.role;
+const isGang = () => role() === "gang";
+const isMgr = () => role() === "manager" || role() === "named";
+const isNamed = () => role() === "named";
+const site = (id) => S.sites.find((x) => x.id === id);
+const client = (id) => S.clients[id] || { name: "Client not set", weeks: 1, ownForms: false };
+const itemName = (k) => (REF.items.find((i) => i.id === k) || { name: k === "DAYWORK" ? "Daywork" : k }).name;
+const claimTotal = (c) => c.lines.reduce((a, l) => a + val(l), 0);
+function runFor(we) {
+  let r = S.runs.find((x) => we >= x.first && we <= x.last);
+  if (r && (r.status !== "open" || new Date(r.paylessClose) < new Date())) return { run: S.runs.find((x) => x.status === "open" && x.first > we && new Date(x.paylessClose) > new Date()), late: true };
+  return { run: r, late: false };
+}
+function resolveRate(gangId, clientId, item, date) {
+  const g = S.gangs[gangId];
+  const order = [g.individual, Object.keys(S.rateSets).find((k) => S.rateSets[k].client === clientId), g.set].filter(Boolean);
+  for (const k of order) {
+    const r = S.rateSets[k].rates.filter((x) => x.item === item && x.from <= date).sort((a, b) => (a.from < b.from ? 1 : -1))[0];
+    if (r) return { rate: r.rate, from: S.rateSets[k].name };
+  }
+  return null;
+}
+function liftClaimed(plotSite, plot, lift, exceptId) {
+  return S.claims.filter((c) => c.site === plotSite && c.plot === plot && c.id !== exceptId && ["awaiting", "approved", "paid"].includes(c.status))
+    .flatMap((c) => c.lines).filter((l) => l.key === lift).reduce((a, l) => a + Number(l.qty), 0);
+}
+function audit(c, what) { c.history.push({ at: new Date().toISOString(), who: { gang: S.gangs[myGang].ganger, manager: "Demo Manager", named: "Demo Director", cm: "Demo Contracts Manager" }[role()], what }); }
+
+// ---------- router ----------
+function tabs() {
+  const t = [["home", "Home"], ["claims", "Claims"]];
+  if (isGang()) t.push(["payments", "My payments"]);
+  t.push(["snags", "Snags"]);
+  if (isMgr()) t.push(["payruns", "Pay runs"], ["sites", "Sites"], ["rates", "Gang rates"]);
+  if (isNamed()) t.push(["margin", "Margin"]);
+  const cur = (location.hash.slice(1) || "home").split("-")[0];
+  $("#tabs").innerHTML = t.map(([h, l]) => `<a href="#${h}" class="${cur === h || (cur === "claim" && h === "claims") || (cur === "run" && h === "payruns") ? "on" : ""} ${h === "margin" ? "restricted" : ""}">${l}</a>`).join("");
+}
+function render() {
+  $("#role").value = role();
+  tabs();
+  const h = location.hash.slice(1) || "home";
+  const [name, arg] = [h.split("-")[0], h.split("-").slice(1).join("-")];
+  const views = { home, claims, sites: sitesView, new: wizard, claim: () => claimView(arg), payments, payruns, run: () => runView(arg), rates, margin, snags };
+  const fn = views[name] || home;
+  let html = "";
+  if (msg) { html += `<div class="alert ${msg.kind}" role="${msg.kind === "err" ? "alert" : "status"}" style="margin-bottom:14px">${esc(msg.text)}</div>`; msg = null; }
+  $("#view").innerHTML = html + fn();
+  after.splice(0).forEach((f) => f());
+}
+const after = [];
+function go(h) { if (location.hash === "#" + h) render(); else location.hash = h; window.scrollTo(0, 0); }
+window.addEventListener("hashchange", render);
+$("#role").addEventListener("change", (e) => { S.role = e.target.value; save(); go("home"); });
+$("#reset").addEventListener("click", () => { S = seed(); save(); msg = { kind: "ok", text: "Demo reset." }; go("home"); });
+
+// ---------- views ----------
+function home() {
+  const we = weekEnding();
+  const mine = S.claims.filter((c) => !isGang() || c.gang === myGang);
+  const count = (st) => mine.filter((c) => c.status === st).length;
+  const next = S.runs.filter((r) => r.status === "open").sort((a, b) => (a.pay < b.pay ? -1 : 1))[0];
+  const flagged = mine.filter((c) => c.status === "awaiting" && (c.flags || []).length).length;
+  const tile = (n, l, h) => `<a class="tile" href="#${h}"><span class="n">${n}</span><span class="l">${l}</span></a>`;
+  const who = { gang: "Alex", cm: "there", manager: "there", named: "there" }[role()];
+  return `<div class="head"><div><div class="eyebrow">K-S Claims</div><h1>Hello, ${who}</h1></div>
+    <div class="actions">${isGang() ? `<a class="btn" href="#new">New claim</a>` : ""}</div></div>
+    <p class="small muted">Claims submitted now count towards week ending <strong>${fmtD(we)}</strong>. Cut-off: Friday 11:00.</p>
+    <div class="tiles">${isGang() ? tile(count("draft"), "Drafts to finish", "claims") + tile(count("returned"), "Returned for correction", "claims") + tile(count("awaiting"), "Waiting for K-S sign-off", "claims")
+      : tile(count("awaiting"), "Awaiting sign-off", "claims") + (isMgr() ? tile(flagged, "Flagged for checking", "claims") : "")}
+      ${tile(S.snags.filter((n) => n.status !== "closed" && (!isGang() || n.gang === myGang)).length, "Open snags", "snags")}
+      ${next ? `<div class="tile"><span class="n" style="font-size:1.35rem">${fmtD(next.pay)}</span><span class="l">Next payment run${isMgr() ? `. Pay-less closes ${fmtD(next.paylessClose)}` : ""}</span></div>` : ""}</div>
+    <h2>How this demo works</h2>
+    <div class="card small">
+      <div><strong>Gang:</strong> start a claim, enter quantities and courses per wall, add photos, hand the phone to the foreman to sign, then see your rates and split the money.</div>
+      <div><strong>Manager:</strong> sign off claims, apply pay-less reductions with a reason, run the pay run and copy the export for Mark.</div>
+      <div><strong>Director (named list):</strong> also sees client rates, client values and margin. Nobody else does.</div>
+    </div>`;
+}
+
+function claims() {
+  const rows = S.claims.filter((c) => !isGang() || c.gang === myGang).slice().reverse();
+  return `<div class="head"><div><div class="eyebrow">Claims</div><h1>${isGang() ? "Your claims" : "All claims"}</h1></div>
+    <div class="actions">${isGang() ? `<a class="btn" href="#new">New claim</a>` : ""}</div></div>
+    ${isGang() && S.draft ? `<div class="alert info" style="margin-bottom:12px">You have a claim in progress. <a href="#new">Continue it</a>.</div>` : ""}
+    <div class="tw"><table><thead><tr><th>Claim</th>${isGang() ? "" : "<th>Gang</th>"}<th>Site / job / plot</th><th>Type</th><th>Week ending</th><th>Status</th>${isMgr() ? '<th class="num">Gang value</th>' : ""}</tr></thead><tbody>
+    ${rows.map((c) => { const st = site(c.site); return `<tr><td><a href="#claim-${c.id}">KS-${c.id}</a></td>${isGang() ? "" : `<td>${esc(S.gangs[c.gang].name)}</td>`}
+      <td>${esc(st.name)}<div class="small muted">${st.job}${c.plot ? ` · Plot ${esc(c.plot)}` : ""}</div></td><td>${TYPES[c.type]}</td><td>${fmtD(c.weekEnding)}</td>
+      <td><span class="badge ${STATUS[c.status][1]}">${STATUS[c.status][0]}</span>${isMgr() && (c.flags || []).length ? ' <span class="badge b-flag">flagged</span>' : ""}</td>
+      ${isMgr() ? `<td class="num">${gbp(claimTotal(c))}</td>` : ""}</tr>`; }).join("") || `<tr><td colspan="7" class="muted">No claims yet.</td></tr>`}
+    </tbody></table></div>`;
+}
+
+// ----- claim wizard (gang) -----
+const STEPS = ["Job", "Work", "Photos", "Foreman", "Split and submit"];
+function newDraft() { return { step: 0, type: "substructure", site: "OAK", plot: "", workDate: iso(new Date()), qty: {}, walls: [{ ref: "", courses: "" }, { ref: "", courses: "" }, { ref: "", courses: "" }], notes: "", photos: [], foreman: null, split: {}, editing: null }; }
+function wizard() {
+  if (!isGang()) return `<div class="alert info">Switch to the gang role to make a claim.</div>`;
+  const d = S.draft || (S.draft = newDraft());
+  const st = site(d.site);
+  const sigRequired = d.type !== "supervision";
+  const steps = `<div class="steps">${STEPS.map((s, i) => (i === 3 && !sigRequired) ? "" : `<span class="${i === d.step ? "on" : i < d.step ? "done" : ""}">${i + 1}. ${s}</span>`).join("")}</div>`;
+  const nav = (back, next, nextLabel = "Continue") => `<div style="display:flex;gap:8px;flex-wrap:wrap">${back ? `<button class="btn ghost" data-a="back" type="button">Back</button>` : ""}<button class="btn" data-a="${next}" type="button">${nextLabel}</button><button class="btn ghost" data-a="discard" type="button" style="margin-left:auto">Discard</button></div>`;
+  let body = "";
+  if (d.step === 0) {
+    body = `<div class="card accent">
+      <div><label for="w-type">Claim type</label><select id="w-type">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${d.type === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+      <div><label for="w-site">Site and job number<span class="hint">Every claim goes to a job number so the cost goes to the right client.</span></label>
+        <select id="w-site">${S.sites.filter((x) => x.active && x.job && x.client).map((x) => `<option value="${x.id}" ${d.site === x.id ? "selected" : ""}>${esc(x.name)} · ${x.job} · ${esc(client(x.client).name)}</option>`).join("")}</select></div>
+      <div><label for="w-plot">Plot<span class="hint">One plot per claim. Not needed for dayworks or supervision.</span></label>
+        <select id="w-plot"><option value="">No plot</option>${st.plots.map((p) => `<option ${d.plot === p ? "selected" : ""}>${p}</option>`).join("")}</select></div>
+      <div class="row"><div><label for="w-date">Work date</label><input id="w-date" type="date" value="${d.workDate}"></div></div>
+      <p class="small muted" style="margin:0">The week ending and pay run are set automatically when you submit.</p>
+      ${nav(false, "next")}</div>`;
+  } else if (d.step === 1) {
+    let inner = "";
+    if (d.type === "substructure") {
+      inner = `<h3>Quantities</h3><p class="small muted" style="margin:0">Enter quantities only. The app works out every total. Rates are shown at the last step.</p>
+        <div>${REF.items.map((i) => `<div class="line"><label for="q-${i.id}" style="margin:0">${i.name}<span class="hint">${i.unit}</span></label><input id="q-${i.id}" type="number" inputmode="decimal" min="0" step="any" data-q="${i.id}" value="${d.qty[i.id] ?? ""}"></div>`).join("")}</div>
+        <h3 style="margin-top:8px">Courses per wall</h3><p class="small muted" style="margin:0">Foundation depth varies. Record the courses for each wall, using the wall references on the drawing you upload next.</p>
+        ${d.walls.map((w, i) => `<div class="wall"><div><label for="wr-${i}" class="small">Wall reference</label><input id="wr-${i}" type="text" data-wr="${i}" value="${esc(w.ref)}" placeholder="${i === 0 ? "Front A" : ""}"></div><div><label for="wc-${i}" class="small">Courses</label><input id="wc-${i}" type="number" inputmode="numeric" min="0" max="200" data-wc="${i}" value="${w.courses}"></div></div>`).join("")}
+        <button class="btn ghost sm" data-a="addwall" type="button" style="justify-self:start">Add another wall</button>`;
+    } else if (d.type === "superstructure") {
+      inner = `<h3>Lifts and patch</h3><p class="small muted" style="margin:0">Enter the percentage of each lift done in this claim. You cannot claim more than what is left.</p>
+        ${d.plot ? REF.lifts.map((l) => { const left = Math.max(0, 100 - liftClaimed(d.site, d.plot, l.id, d.editing)); return `<div class="line"><label for="q-${l.id}" style="margin:0">${l.name}<span class="hint">${left}% left to claim</span></label><input id="q-${l.id}" type="number" min="0" max="${left}" step="any" data-q="${l.id}" value="${d.qty[l.id] ?? ""}" ${left === 0 ? "disabled" : ""}></div>`; }).join("") : `<div class="alert warn">Go back and choose a plot.</div>`}`;
+    } else if (d.type === "daywork") {
+      inner = `<h3>Daywork</h3><div class="line"><label for="q-DAYWORK" style="margin:0">Hours worked<span class="hint">hours</span></label><input id="q-DAYWORK" type="number" min="0" step="0.25" data-q="DAYWORK" value="${d.qty.DAYWORK ?? ""}"></div>`;
+    } else {
+      const sups = S.supervision.filter((x) => x.site === d.site && S.payees.find((p) => p.id === x.payee).gang === myGang);
+      inner = `<h3>Supervision</h3>${sups.length ? sups.map((x) => `<div class="line"><label for="q-${x.id}" style="margin:0">${esc(S.payees.find((p) => p.id === x.payee).name)}<span class="hint">weeks</span></label><input id="q-${x.id}" type="number" min="0" step="0.5" data-q="${x.id}" value="${d.qty[x.id] ?? ""}"></div>`).join("")
+        : `<div class="alert warn">Nobody in your gang is set up as a working supervisor on this site. Ask the office.</div>`}`;
+    }
+    body = `<div class="card accent">${inner}<div><label for="w-notes">Notes</label><textarea id="w-notes">${esc(d.notes)}</textarea></div>
+      <p class="small muted" style="margin:0">Changing the work after the foreman has signed clears the signature.</p>${nav(true, "next")}</div>`;
+  } else if (d.step === 2) {
+    const kinds = [["photo", "Work photos", true], ...(d.type === "substructure" ? [["drawing", "Foundation drawing (photo or scan)", true]] : []), ...(d.type === "daywork" ? [["daywork_sheet", "Signed client daywork sheet", true]] : []), ["client_form", "Client's own form", false]];
+    body = `<div class="alert info">Photos are required before a claim can be submitted. Keep the plot number or a landmark in shot.</div>
+      ${client(st.client).ownForms ? `<div class="alert warn">This client may only accept its own forms. Fill in their form as usual and add a photo of it.</div>` : ""}
+      ${kinds.map(([k, label, req]) => { const mine = d.photos.filter((p) => p.kind === k); return `<div class="card"><h3>${label} <span class="badge ${req ? "b-awaiting" : ""}">${req ? "Required" : "Optional"}</span></h3>
+        ${mine.length ? `<div class="thumbs">${mine.map((p) => `<figure>${p.src ? `<img src="${p.src}" alt="${esc(p.name)}">` : `<div style="width:110px;height:82px;border-radius:6px;background:var(--row)"></div>`}<figcaption>${esc(p.name)}</figcaption><button class="btn ghost sm" data-a="rmphoto" data-i="${d.photos.indexOf(p)}" type="button">Remove</button></figure>`).join("")}</div>` : ""}
+        <div><label for="f-${k}">Take a photo or choose a file</label><input id="f-${k}" type="file" accept="image/*" ${k === "photo" ? "multiple" : ""} data-file="${k}"></div>
+        ${k !== "photo" ? `<label class="small" style="font-weight:400;margin:0"><input type="checkbox" data-enh="${k}" checked> Enhance document (black and white, higher contrast)</label>` : ""}</div>`; }).join("")}
+      ${nav(true, "next")}`;
+  } else if (d.step === 3) {
+    body = `<div class="card accent"><div class="eyebrow">Hand the phone to the client foreman</div>
+      <dl class="kv"><dt>Gang</dt><dd>${esc(S.gangs[myGang].name)}</dd><dt>Client</dt><dd>${esc(client(st.client).name)}</dd><dt>Site</dt><dd>${esc(st.name)} · ${st.job}</dd>${d.plot ? `<dt>Plot</dt><dd>${esc(d.plot)} · ${st.houseType}</dd>` : ""}<dt>Work date</dt><dd>${fmtD(d.workDate)}</dd></dl>
+      ${workTable(draftLines(d), false)}
+      ${d.walls.filter((w) => w.ref).length ? `<div><strong>Courses per wall:</strong> ${d.walls.filter((w) => w.ref).map((w) => `${esc(w.ref)}: ${esc(w.courses)}`).join(" · ")}</div>` : ""}
+      ${d.photos.length ? `<div class="thumbs">${d.photos.map((p) => `<figure>${p.src ? `<img src="${p.src}" alt="">` : ""}<figcaption>${p.kind.replace("_", " ")}</figcaption></figure>`).join("")}</div>` : ""}</div>
+      ${d.foreman ? `<div class="alert ok">Signed by ${esc(d.foreman.name)} at ${fmtDT(d.foreman.at)}. Signing again replaces it.</div>` : ""}
+      <div class="card"><div><label for="fm-name">Foreman full name</label><input id="fm-name" type="text" autocomplete="off" value=""></div>
+      <div><label>Signature</label><canvas class="sig" id="sig" aria-label="Signature box"></canvas>
+        <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="small muted" id="sig-state">Sign in the box with your finger.</span><button class="btn ghost sm" data-a="clearsig" type="button">Clear</button></div></div>
+      <p class="small muted" style="margin:0">Sign to confirm you have checked the work shown above. This records your typed name and signature with the date and time. It does not verify identity.</p>
+      ${nav(true, "sign", "Sign")}</div>`;
+    after.push(initSig);
+  } else {
+    const lines = priceLines(d);
+    const total = lines.reduce((a, l) => a + (l.value ?? 0), 0);
+    const payees = S.payees.filter((p) => p.gang === myGang);
+    const allocated = payees.filter((p) => p.cleared).reduce((a, p) => a + P(d.split[p.id] || 0), 0);
+    const left = total - allocated;
+    body = `<div class="card accent"><h3>Your claim</h3><p class="small muted" style="margin:0">Worked out from your agreed rates. If a rate looks wrong, contact the office.</p>
+      ${workTable(lines, true)}<div class="total"><span>Claim total</span><span>${gbp(total)}</span></div></div>
+      <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">Split between your gang</h3><button class="btn ghost sm" data-a="equal" type="button">Split equally</button></div>
+      ${payees.map((p) => `<div class="line"><label for="sp-${p.id}" style="margin:0">${esc(p.name)}<span class="hint">${p.legal !== p.name ? esc(p.legal) + " · " : ""}${p.entity}${p.cleared ? "" : " · not cleared for payment"}</span></label><input id="sp-${p.id}" type="number" min="0" step="0.01" data-sp="${p.id}" value="${d.split[p.id] ?? ""}" ${p.cleared ? "" : "disabled"}></div>`).join("")}
+      <div class="total" style="font-size:1.1rem"><span>${left >= 0 ? "Left to allocate" : "Over by"}</span><span style="color:${left === 0 ? "var(--ok)" : left < 0 ? "var(--bad)" : "inherit"}">${gbp(Math.abs(left))}</span></div>
+      <p class="small muted" style="margin:0">The split cannot be more than the claim value. Members not cleared for payment by the payment company cannot be paid.</p>
+      ${nav(true, "submit", "Submit claim")}</div>`;
+  }
+  return `<div class="head"><div><div class="eyebrow">${d.editing ? `KS-${d.editing} · correcting` : "New claim"} · ${TYPES[d.type]}</div><h1>${["Where did you work?", "Record the work", "Photos and documents", "Foreman sign-off", "Check and split"][d.step]}</h1></div></div>
+    <div class="stack">${steps}${body}</div>`;
+}
+function draftLines(d) {
+  const out = [];
+  if (d.type === "substructure") REF.items.forEach((i) => { if (Number(d.qty[i.id]) > 0) out.push({ key: i.id, desc: i.name, unit: i.unit, qty: Number(d.qty[i.id]) }); });
+  if (d.type === "superstructure") REF.lifts.forEach((l) => { if (Number(d.qty[l.id]) > 0) out.push({ key: l.id, desc: l.name, unit: "%", qty: Number(d.qty[l.id]) }); });
+  if (d.type === "daywork" && Number(d.qty.DAYWORK) > 0) out.push({ key: "DAYWORK", desc: "Daywork", unit: "hour", qty: Number(d.qty.DAYWORK) });
+  if (d.type === "supervision") S.supervision.forEach((x) => { if (Number(d.qty[x.id]) > 0) out.push({ key: "SUP", sup: x.id, desc: "Supervision: " + S.payees.find((p) => p.id === x.payee).name, unit: "week", qty: Number(d.qty[x.id]) }); });
+  return out;
+}
+function priceLines(d) {
+  const st = site(d.site);
+  return draftLines(d).map((l) => {
+    let r = null;
+    if (l.unit === "%") r = { rate: S.liftValues[l.key], from: "Lift value" };
+    else if (l.key === "SUP") r = { rate: S.supervision.find((x) => x.id === l.sup).weekly, from: "Supervision assignment" };
+    else r = resolveRate(myGang, st.client, l.key, d.workDate);
+    return Object.assign({}, l, r ? { rate: r.rate, from: r.from, value: val({ ...l, rate: r.rate }) } : { rate: null, value: null });
+  });
+}
+function workTable(lines, money) {
+  if (!lines.length) return `<div class="alert warn">No work entered yet.</div>`;
+  return `<div class="tw"><table><thead><tr><th>Work</th><th class="num">Quantity</th>${money ? '<th class="num">Rate</th><th class="num">Value</th>' : "<th>Unit</th>"}</tr></thead><tbody>
+    ${lines.map((l) => `<tr><td>${esc(l.desc)}</td><td class="num">${l.qty}${money ? " " + l.unit : ""}</td>${money ? `<td class="num">${l.rate == null ? "Not set" : l.unit === "%" ? gbp(P(l.rate)) + " lift" : rateFmt(l.rate)}</td><td class="num">${l.value == null ? "" : gbp(l.value)}</td>` : `<td>${l.unit}</td>`}</tr>`).join("")}</tbody></table></div>`;
+}
+let sigData = null;
+function initSig() {
+  const c = $("#sig"); if (!c) return;
+  sigData = null;
+  const r = window.devicePixelRatio || 1;
+  c.width = c.offsetWidth * r; c.height = c.offsetHeight * r;
+  const x = c.getContext("2d"); x.scale(r, r); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+  x.lineWidth = 2.5; x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = "#111";
+  let down = false, strokes = 0;
+  const pos = (e) => { const b = c.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  c.addEventListener("pointerdown", (e) => { down = true; c.setPointerCapture(e.pointerId); const [a, b] = pos(e); x.beginPath(); x.moveTo(a, b); });
+  c.addEventListener("pointermove", (e) => { if (!down) return; const [a, b] = pos(e); x.lineTo(a, b); x.stroke(); strokes++; });
+  const up = () => { if (!down) return; down = false; if (strokes > 8) { sigData = c.toDataURL("image/png"); $("#sig-state").textContent = "Signed."; } };
+  c.addEventListener("pointerup", up); c.addEventListener("pointerleave", up);
+}
+async function compress(file, enhance) {
+  const bmp = await createImageBitmap(file);
+  const s = Math.min(1, 480 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas"); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+  const x = c.getContext("2d"); x.drawImage(bmp, 0, 0, c.width, c.height);
+  if (enhance) {
+    const img = x.getImageData(0, 0, c.width, c.height), d = img.data; let lo = 255, hi = 0;
+    for (let i = 0; i < d.length; i += 4) { const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; lo = Math.min(lo, y); hi = Math.max(hi, y); }
+    for (let i = 0; i < d.length; i += 4) { const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = d[i + 1] = d[i + 2] = Math.max(0, Math.min(255, (y - lo) * 255 / Math.max(1, hi - lo))); }
+    x.putImageData(img, 0, 0);
+  }
+  return c.toDataURL("image/jpeg", 0.7);
+}
+function readDraftInputs() {
+  const d = S.draft; if (!d) return;
+  const v = (id) => $("#" + id)?.value;
+  if ($("#w-type")) { const t = v("w-type"); if (t !== d.type) { d.type = t; d.qty = {}; d.foreman = null; } d.site = v("w-site"); d.plot = v("w-plot"); d.workDate = v("w-date") || d.workDate; }
+  document.querySelectorAll("[data-q]").forEach((el) => { const before = d.qty[el.dataset.q]; d.qty[el.dataset.q] = el.value; if (String(before ?? "") !== el.value) d.foreman = null; });
+  document.querySelectorAll("[data-wr]").forEach((el) => { const w = d.walls[Number(el.dataset.wr)]; if (w.ref !== el.value) d.foreman = null; w.ref = el.value; });
+  document.querySelectorAll("[data-wc]").forEach((el) => { const w = d.walls[Number(el.dataset.wc)]; if (String(w.courses) !== el.value) d.foreman = null; w.courses = el.value; });
+  if ($("#w-notes")) d.notes = v("w-notes");
+  document.querySelectorAll("[data-sp]").forEach((el) => (d.split[el.dataset.sp] = el.value));
+}
+function validateStep(d) {
+  const e = [];
+  if (d.step === 0) { if ((d.type === "substructure" || d.type === "superstructure") && !d.plot) e.push("Choose a plot."); if (!d.workDate) e.push("Enter the work date."); }
+  if (d.step === 1) {
+    if (!draftLines(d).length) e.push("Enter at least one quantity.");
+    if ([...Object.values(d.qty)].some((q) => q !== "" && !(Number(q) >= 0))) e.push("Quantities must be numbers of zero or more.");
+    if (d.type === "substructure" && !d.walls.some((w) => w.ref && w.courses !== "")) e.push("Record the course count for each wall.");
+    if (d.walls.some((w) => w.ref && !(Number.isInteger(Number(w.courses)) && Number(w.courses) >= 0))) e.push("Courses must be whole numbers.");
+  }
+  if (d.step === 2) {
+    if (!d.photos.some((p) => p.kind === "photo")) e.push("Add at least one work photo.");
+    if (d.type === "substructure" && !d.photos.some((p) => p.kind === "drawing")) e.push("Add a photo or scan of the foundation drawing.");
+    if (d.type === "daywork" && !d.photos.some((p) => p.kind === "daywork_sheet")) e.push("Add the signed client daywork sheet.");
+  }
+  return e;
+}
+function submitDraft() {
+  const d = S.draft, st = site(d.site), e = [];
+  for (let s = 0; s < 3; s++) e.push(...validateStep({ ...d, step: s }));
+  if (d.type !== "supervision" && !d.foreman) e.push("The client foreman must sign this stage.");
+  const lines = priceLines(d);
+  if (lines.some((l) => l.rate == null)) e.push("A rate is not set for one of the items. The office has been flagged.");
+  lines.filter((l) => l.unit === "%").forEach((l) => { const left = 100 - liftClaimed(d.site, d.plot, l.key, d.editing); if (l.qty > left) e.push(`${l.desc}: only ${Math.max(0, left)}% of this lift is left to claim.`); });
+  const total = lines.reduce((a, l) => a + (l.value || 0), 0);
+  const payees = S.payees.filter((p) => p.gang === myGang && p.cleared);
+  const split = Object.fromEntries(payees.map((p) => [p.id, P(d.split[p.id] || 0)]).filter(([, v]) => v > 0));
+  const sum = Object.values(split).reduce((a, b) => a + b, 0);
+  if (Object.values(split).some((v) => v < 0)) e.push("Split amounts must be zero or more.");
+  if (sum > total) e.push("The split adds up to more than the claim value.");
+  if (sum === 0 && total > 0) e.push("Allocate the claim value between your gang members.");
+  if (e.length) { msg = { kind: "err", text: e.join("\n") }; return render(); }
+  const we = weekEnding(); const { run, late } = runFor(we);
+  const flags = [];
+  if (sum < total) flags.push(`Split is ${gbp(total - sum)} less than the claim value.`);
+  if (late) flags.push("Submitted after the cut-off for its pay run. Rolled to the next pay run.");
+  if (!run) flags.push(`No open pay run covers week ending ${fmtD(we)}.`);
+  let c = d.editing ? S.claims.find((x) => x.id === d.editing) : null;
+  const data = { gang: myGang, site: d.site, plot: d.plot, type: d.type, workDate: d.workDate, weekEnding: we, run: run?.id || null, status: "awaiting",
+    lines: lines.map(({ key, sup, desc, unit, qty, rate, from }) => ({ key, sup, desc, unit, qty, rate, from })), walls: d.walls.filter((w) => w.ref).map((w) => ({ ref: w.ref, courses: Number(w.courses) })),
+    notes: d.notes, photos: d.photos, foreman: d.foreman, split, flags };
+  if (c) Object.assign(c, data); else { c = Object.assign({ id: String(S.seq++), created: new Date().toISOString(), history: [] }, data); S.claims.push(c); }
+  audit(c, "Submitted");
+  S.draft = null; save();
+  msg = { kind: "ok", text: `KS-${c.id} submitted for K-S sign-off. Week ending ${fmtD(we)}.` };
+  go("claim-" + c.id);
+}
+
+// ----- claim detail -----
+function claimView(id) {
+  const c = S.claims.find((x) => x.id === id);
+  if (!c || (isGang() && c.gang !== myGang)) return `<div class="alert err">Claim not found.</div>`;
+  const st = site(c.site), total = claimTotal(c);
+  const run = S.runs.find((r) => r.id === c.run);
+  const paylessOpen = !run || (run.status === "open" && new Date(run.paylessClose) > new Date());
+  const showSplit = isMgr() || isGang();
+  let html = `<div class="head"><div><div class="eyebrow">${TYPES[c.type]} claim</div><h1>KS-${c.id}</h1>
+    <p class="small muted" style="margin:4px 0 0">${esc(S.gangs[c.gang].name)} · ${esc(client(st.client).name)} · ${esc(st.name)} · ${st.job}${c.plot ? ` · Plot ${esc(c.plot)}` : ""}</p></div>
+    <div class="actions"><span class="badge ${STATUS[c.status][1]}">${STATUS[c.status][0]}</span></div></div><div class="stack">`;
+  if (c.status === "returned") html += `<div class="alert warn">Returned by K-S: ${esc(c.returnNote || "")}</div>${isGang() ? `<button class="btn" data-a="correct" data-id="${c.id}" type="button" style="justify-self:start">Correct and resubmit</button>` : ""}`;
+  html += `<div class="card"><dl class="kv"><dt>Work date</dt><dd>${fmtD(c.workDate)}</dd><dt>Week ending</dt><dd>${fmtD(c.weekEnding)}</dd><dt>Pay run</dt><dd>${run ? "Payment " + fmtD(run.pay) : "Not assigned"}</dd>${c.notes ? `<dt>Notes</dt><dd>${esc(c.notes)}</dd>` : ""}</dl></div>
+    <h2 style="margin:6px 0 0">Work and evidence</h2><div class="card">${workTable(c.lines, false)}
+    ${c.walls.length ? `<div><strong>Courses per wall:</strong> ${c.walls.map((w) => `${esc(w.ref)}: ${w.courses}`).join(" · ")}</div>` : ""}
+    <div class="thumbs">${c.photos.map((p) => `<figure>${p.src ? `<img src="${p.src}" alt="">` : `<div style="width:110px;height:82px;border-radius:6px;background:var(--row);display:grid;place-items:center" class="small muted">sample</div>`}<figcaption>${p.kind.replace("_", " ")}</figcaption></figure>`).join("")}</div></div>
+    <h2 style="margin:6px 0 0">Foreman sign-off</h2><div class="card">${c.foreman ? `<div>Signed by <strong>${esc(c.foreman.name)}</strong> on ${fmtDT(c.foreman.at)}.</div>${c.foreman.sig ? `<img src="${c.foreman.sig}" alt="Signature" style="max-width:280px;border:1px solid var(--line);border-radius:6px;background:#fff">` : ""}<div class="small muted">Given on the gang's device in good faith. It records the typed name and signature; it does not verify identity.</div>` : `<div class="muted">Not required for this claim type.</div>`}</div>`;
+  if (showSplit && c.split) {
+    html += `<h2 style="margin:6px 0 0">Split</h2><div class="tw"><table><thead><tr><th>Gang member</th><th class="num">Amount</th>${isMgr() ? '<th class="num">Before reductions</th>' : ""}</tr></thead><tbody>
+      ${Object.entries(c.split).map(([pid, v]) => { const p = S.payees.find((x) => x.id === pid); return `<tr><td>${esc(p.name)}</td><td class="num">${gbp(v)}</td>${isMgr() ? `<td class="num">${c.splitOriginal ? gbp(c.splitOriginal[pid]) : ""}</td>` : ""}</tr>`; }).join("")}</tbody></table></div>`;
+  }
+  if (isMgr()) {
+    html += `<h2 style="margin:6px 0 0">Management</h2>${(c.flags || []).length ? `<div class="alert warn"><strong>Flags</strong>\n${c.flags.map(esc).join("\n")}</div>` : ""}
+      <div class="tw"><table><thead><tr><th>Line</th><th class="num">Quantity</th><th class="num">Gang rate</th><th>Rate from</th><th class="num">Gang value</th><th class="num">Originally</th></tr></thead><tbody>
+      ${c.lines.map((l) => `<tr><td>${esc(l.desc)}</td><td class="num">${l.qty} ${l.unit}</td><td class="num">${l.unit === "%" ? gbp(P(l.rate)) : rateFmt(l.rate)}</td><td class="small">${esc(l.from)}</td><td class="num">${gbp(val(l))}</td><td class="num small">${l.origQty != null ? `${l.origQty} ${l.unit} · ${gbp(l.origValue)}` : ""}</td></tr>`).join("")}
+      <tr><td colspan="4"><strong>Total gang cost</strong></td><td class="num"><strong>${gbp(total)}</strong></td><td></td></tr></tbody></table></div>`;
+    if (c.status === "awaiting") html += `<div class="row"><div class="card"><h3>Approve (second sign-off)</h3><button class="btn" data-a="approve" data-id="${c.id}" type="button">Approve</button></div>
+      <div class="card"><h3>Return to the gang</h3><div><label for="ret-note">What needs fixing</label><input id="ret-note" type="text"></div><button class="btn ghost" data-a="return" data-id="${c.id}" type="button">Return</button></div></div>`;
+    if (c.status === "awaiting" || c.status === "approved") html += `<details class="card"><summary>Pay-less reduction</summary>
+      ${paylessOpen ? "" : `<div class="alert warn">The pay-less window for this pay run has closed.</div>`}
+      <p class="small muted" style="margin:0">Reduce a line's quantity. The original, the change, who made it and why are kept, and the split is rescaled in proportion. The exact pay-less rules are still to be confirmed by K-S.</p>
+      <div class="row"><div><label for="pl-line">Line</label><select id="pl-line">${c.lines.map((l, i) => `<option value="${i}">${esc(l.desc)} (${l.qty} ${l.unit})</option>`).join("")}</select></div>
+      <div><label for="pl-qty">Reduced quantity</label><input id="pl-qty" type="number" min="0" step="any"></div>
+      <div><label for="pl-reason">Reason</label><select id="pl-reason">${REF.reasons.map((r) => `<option>${r}</option>`).join("")}</select></div></div>
+      <div><label for="pl-note">Note</label><textarea id="pl-note"></textarea></div>
+      <button class="btn danger" data-a="reduce" data-id="${c.id}" type="button" ${paylessOpen ? "" : "disabled"} style="justify-self:start">Record reduction</button></details>`;
+  }
+  html += `<details class="card"><summary>History (${c.history.length})</summary><ul class="small" style="margin:0;padding-left:18px">${c.history.map((h) => `<li>${fmtDT(h.at)} · ${esc(h.who)} · ${esc(h.what)}</li>`).join("")}</ul></details></div>`;
+  return html;
+}
+
+// ----- payments -----
+function payeeTotals(runId) {
+  const t = {};
+  S.claims.filter((c) => c.run === runId && ["approved", "paid"].includes(c.status)).forEach((c) => Object.entries(c.split || {}).forEach(([pid, v]) => {
+    const k = (t[pid] ||= { measured: 0, daywork: 0, supervision: 0, reductions: 0, total: 0 });
+    k[c.type === "daywork" ? "daywork" : c.type === "supervision" ? "supervision" : "measured"] += v; k.total += v;
+    if (c.splitOriginal) k.reductions += (c.splitOriginal[pid] || 0) - v;
+  }));
+  return t;
+}
+function payments() {
+  const rows = [];
+  S.runs.forEach((r) => Object.entries(payeeTotals(r.id)).forEach(([pid, t]) => { const p = S.payees.find((x) => x.id === pid); if (p.gang === myGang) rows.push({ r, p, t }); }));
+  return `<div class="head"><div><div class="eyebrow">Payments</div><h1>Your gang's payments</h1></div></div>
+    <p class="small muted">Approved amounts per gang member and pay run. Gross, before any deductions by the payment company.</p>
+    <div class="tw"><table><thead><tr><th>Payment date</th><th>Gang member</th><th class="num">Amount</th><th>Invoice</th></tr></thead><tbody>
+    ${rows.map(({ r, p, t }) => `<tr><td>${fmtD(r.pay)}${r.status === "paid" ? ' <span class="badge b-paid">Paid</span>' : ""}</td><td>${esc(p.name)}</td><td class="num">${gbp(t.total)}</td><td>${(r.invoices || {})[p.id] ? `KS-PAY-${String(r.invoices[p.id]).padStart(6, "0")}` : '<span class="muted small">Not yet issued</span>'}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">No approved payments yet.</td></tr>'}
+    </tbody></table></div>`;
+}
+function payruns() {
+  return `<div class="head"><div><div class="eyebrow">Payments</div><h1>Pay runs</h1></div></div>
+    <div class="tw"><table><thead><tr><th>Payment date</th><th>Week endings</th><th>Pay-less closes</th><th>Claims</th><th class="num">Approved gross</th><th>Status</th></tr></thead><tbody>
+    ${S.runs.map((r) => { const cl = S.claims.filter((c) => c.run === r.id); const tot = Object.values(payeeTotals(r.id)).reduce((a, t) => a + t.total, 0);
+      return `<tr><td><a href="#run-${r.id}">${fmtD(r.pay)}</a></td><td>${fmtD(r.first)} to ${fmtD(r.last)}</td><td>${fmtD(r.paylessClose)}</td><td>${cl.length}${cl.some((c) => c.status === "awaiting") ? ` <span class="small muted">(${cl.filter((c) => c.status === "awaiting").length} awaiting)</span>` : ""}</td><td class="num">${gbp(tot)}</td><td><span class="badge">${r.status}</span></td></tr>`; }).join("")}
+    </tbody></table></div><p class="small muted">Fortnightly runs of two week endings. The pay-less window closes before payment; the exact pay calendar is still to be confirmed by K-S.</p>`;
+}
+function runView(id) {
+  const r = S.runs.find((x) => x.id === id); if (!r) return `<div class="alert err">Pay run not found.</div>`;
+  const t = payeeTotals(id), cl = S.claims.filter((c) => c.run === id);
+  const csv = runCsv(id);
+  return `<div class="head"><div><div class="eyebrow">Pay run · ${r.status}</div><h1>Payment ${fmtD(r.pay)}</h1>
+    <p class="small muted" style="margin:4px 0 0">Week endings ${fmtD(r.first)} to ${fmtD(r.last)}. Pay-less closes ${fmtD(r.paylessClose)}.</p></div></div>
+    <div class="stack"><div class="tw"><table><thead><tr><th>Gang member</th><th>Gang</th><th class="num">Measured</th><th class="num">Daywork</th><th class="num">Supervision</th><th class="num">Reductions</th><th class="num">Total</th><th>Invoice</th></tr></thead><tbody>
+    ${Object.entries(t).map(([pid, x]) => { const p = S.payees.find((y) => y.id === pid); return `<tr><td>${esc(p.name)}<div class="small muted">${esc(p.legal)} · ${p.entity}</div></td><td>${esc(S.gangs[p.gang].name)}</td><td class="num">${gbp(x.measured)}</td><td class="num">${gbp(x.daywork)}</td><td class="num">${gbp(x.supervision)}</td><td class="num">${x.reductions ? "-" + gbp(x.reductions) : ""}</td><td class="num"><strong>${gbp(x.total)}</strong></td><td class="small">${(r.invoices || {})[pid] ? `KS-PAY-${String(r.invoices[pid]).padStart(6, "0")}` : ""}</td></tr>`; }).join("") || '<tr><td colspan="8" class="muted">No approved claims in this run yet.</td></tr>'}
+    </tbody></table></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-a="invoices" data-id="${id}" type="button">Generate invoices</button>${r.status !== "paid" ? `<button class="btn ghost" data-a="paid" data-id="${id}" type="button">Mark as paid</button>` : ""}</div>
+    <div class="card"><h3>Export for Mark (CSV)</h3><p class="small muted" style="margin:0">Approved claims only, gross amounts. In the real app this downloads as Excel and CSV in one click.</p>
+      <textarea id="csv" class="mono" rows="7" readonly>${esc(csv)}</textarea><button class="btn ghost sm" data-a="copycsv" type="button" style="justify-self:start">Copy CSV</button></div>
+    <h2 style="margin:6px 0 0">Claims in this run</h2><div class="tw"><table><thead><tr><th>Claim</th><th>Gang</th><th>Status</th><th class="num">Gang value</th></tr></thead><tbody>
+    ${cl.map((c) => `<tr><td><a href="#claim-${c.id}">KS-${c.id}</a></td><td>${esc(S.gangs[c.gang].name)}</td><td><span class="badge ${STATUS[c.status][1]}">${STATUS[c.status][0]}</span></td><td class="num">${gbp(claimTotal(c))}</td></tr>`).join("")}
+    </tbody></table></div></div>`;
+}
+function runCsv(id) {
+  const r = S.runs.find((x) => x.id === id);
+  const rows = [["payment_date", "week_ending", "claim", "type", "client", "site", "job", "plot", "gang", "payee", "legal_name", "entity", "amount"]];
+  S.claims.filter((c) => c.run === id && ["approved", "paid"].includes(c.status)).forEach((c) => Object.entries(c.split || {}).forEach(([pid, v]) => {
+    const p = S.payees.find((x) => x.id === pid), st = site(c.site);
+    rows.push([r.pay, c.weekEnding, "KS-" + c.id, c.type, client(st.client).name, st.name, st.job, c.plot || "", S.gangs[c.gang].name, p.name, p.legal, p.entity, (v / 100).toFixed(2)]);
+  }));
+  return rows.map((row) => row.map((x) => /[",\n]/.test(String(x)) ? `"${String(x).replace(/"/g, '""')}"` : x).join(",")).join("\n");
+}
+
+// ----- sites (management) -----
+function parsePlots(spec) {
+  const out = [];
+  for (const part of spec.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const m = /^(\d+)\s*-\s*(\d+)$/.exec(part);
+    if (m) { const a = Number(m[1]), b = Number(m[2]); if (b < a || b - a > 500) return null; for (let i = a; i <= b; i++) out.push(String(i)); }
+    else out.push(part.slice(0, 20));
+  }
+  return out;
+}
+function sitesView() {
+  if (!isMgr()) return `<div class="alert err">Page not found.</div>`;
+  const clientOpts = (sel) => `<option value="">Not known yet</option>` + Object.entries(S.clients).map(([k, c]) => `<option value="${k}" ${sel === k ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+  return `<div class="head"><div><div class="eyebrow">Management</div><h1>Sites</h1></div></div><div class="stack">
+    <p class="small muted" style="margin:0">Gangs can only claim on a site once it has a client and a job number.</p>
+    <div class="tw"><table><thead><tr><th>Site</th><th>Client</th><th>Job number</th><th>Plots</th><th>Status</th></tr></thead><tbody>
+    ${S.sites.map((x) => `<tr><td>${esc(x.name)}</td>
+      <td><select id="sc-${x.id}" aria-label="Client for ${esc(x.name)}">${clientOpts(x.client)}</select></td>
+      <td><input id="sj-${x.id}" type="text" value="${esc(x.job || "")}" aria-label="Job number for ${esc(x.name)}" style="min-width:110px"></td>
+      <td class="small">${x.plots.length ? esc(x.plots.slice(0, 8).join(", ")) + (x.plots.length > 8 ? ` and ${x.plots.length - 8} more` : "") : "None"}
+        <div style="display:flex;gap:6px;margin-top:6px"><input id="sp2-${x.id}" type="text" placeholder="Add plots: 7-12" aria-label="Add plots to ${esc(x.name)}"><button class="btn ghost sm" data-a="addplots" data-id="${x.id}" type="button">Add</button></div></td>
+      <td>${x.job && x.client ? '<span class="badge b-approved">Gangs can claim</span>' : '<span class="badge b-returned">Needs client and job</span>'}
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="btn ghost sm" data-a="savesite" data-id="${x.id}" type="button">Save</button>
+        <button class="btn ghost sm" data-a="togglesite" data-id="${x.id}" type="button">${x.active ? "Close site" : "Reopen"}</button></div>${x.active ? "" : '<div class="small muted">Closed</div>'}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="card accent"><h3>Add a site</h3>
+      <p class="small muted" style="margin:0">Site, client, job number and plots in one go. Only the site name is required.</p>
+      <div class="row"><div><label for="as-name">Site name</label><input id="as-name" type="text"></div><div><label for="as-job">Job number</label><input id="as-job" type="text"></div></div>
+      <div class="row"><div><label for="as-client">Client (who K-S invoices)</label><select id="as-client">${clientOpts("")}</select></div>
+        <div><label for="as-newclient">Or a new client</label><input id="as-newclient" type="text" placeholder="Type a new client name"></div></div>
+      <div class="row"><div><label for="as-plots">Plots<span class="hint">For example 1-20, 25, 30A</span></label><input id="as-plots" type="text"></div>
+        <div><label for="as-ht">House type</label><input id="as-ht" type="text"></div></div>
+      <button class="btn" data-a="addsite" type="button" style="justify-self:start">Add site</button></div></div>`;
+}
+
+// ----- gang rates (management) -----
+function rates() {
+  const today = iso(new Date());
+  return `<div class="head"><div><div class="eyebrow">Management</div><h1>Gang pay rates</h1></div></div>
+    <div class="stack"><div class="alert info">Gang pay rates only. Client charge rates are kept in the restricted margin area. Foremen never see rates; gangs see their own only at the last step of a claim.</div>
+    <p class="small muted" style="margin:0">Order used on a claim (to be confirmed by K-S): individual agreed rate, then a client-specific set, then the gang's base set. A rate with a future date is an uplift.</p>
+    ${Object.entries(S.rateSets).map(([k, s]) => `<div class="card"><h3>${esc(s.name)} <span class="badge">${s.kind}</span></h3>
+      <div class="tw"><table><thead><tr><th>Item</th><th class="num">Current rate</th><th>Since</th><th>Scheduled</th></tr></thead><tbody>
+      ${[...new Set(s.rates.map((x) => x.item))].map((it) => { const all = s.rates.filter((x) => x.item === it); const cur = all.filter((x) => x.from <= today).sort((a, b) => (a.from < b.from ? 1 : -1))[0]; const fut = all.filter((x) => x.from > today);
+        return `<tr><td>${itemName(it)}</td><td class="num">${cur ? rateFmt(cur.rate) : "none"}</td><td>${cur ? fmtD(cur.from) : ""}</td><td class="small">${fut.map((f) => `${rateFmt(f.rate)} from ${fmtD(f.from)}`).join("; ")}</td></tr>`; }).join("")}</tbody></table></div>
+      <div class="row" style="align-items:end"><div><label for="ri-${k}">Item</label><select id="ri-${k}">${[...REF.items.map((i) => [i.id, i.name]), ["DAYWORK", "Daywork"]].map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select></div>
+        <div><label for="rr-${k}">Rate (£)</label><input id="rr-${k}" type="number" min="0" step="0.0001"></div><div><label for="rd-${k}">Effective from</label><input id="rd-${k}" type="date" value="${today}"></div>
+        <div><button class="btn" data-a="addrate" data-id="${k}" type="button">Save rate</button></div></div></div>`).join("")}
+    <h2 style="margin:6px 0 0">Gang members cleared for payment</h2>
+    <p class="small muted" style="margin:0">Onboarding and checks are done by the payment company. Only cleared members can receive a split.</p>
+    <div class="tw"><table><thead><tr><th>Member</th><th>Gang</th><th>Entity</th><th>Status</th></tr></thead><tbody>
+    ${S.payees.map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(S.gangs[p.gang].name)}</td><td>${p.entity}</td><td><span class="badge ${p.cleared ? "b-approved" : "b-returned"}">${p.cleared ? "Cleared" : "Not cleared"}</span> <button class="btn ghost sm" data-a="clear" data-id="${p.id}" type="button">${p.cleared ? "Remove" : "Mark cleared"}</button></td></tr>`).join("")}
+    </tbody></table></div></div>`;
+}
+
+// ----- margin (named list only) -----
+function clientValue(c, l) {
+  const r = (S.clientRates[site(c.site).client] || {})[l.key];
+  if (r == null) return 0;
+  if (l.unit === "%") return Math.round(l.qty * P(r) / 100);
+  return lineP(l.qty, r);
+}
+function margin() {
+  if (!isNamed()) return `<div class="alert err">Page not found.</div>`;
+  const groups = { gang: (c) => S.gangs[c.gang].name, site: (c) => site(c.site).name, client: (c) => client(site(c.site).client).name, week: (c) => fmtD(c.weekEnding) };
+  const g = S.marginGroup || "gang";
+  const agg = {};
+  S.claims.filter((c) => ["awaiting", "approved", "paid"].includes(c.status)).forEach((c) => c.lines.forEach((l) => {
+    const k = groups[g](c); const a = (agg[k] ||= { cost: 0, value: 0 }); a.cost += val(l); a.value += clientValue(c, l);
+  }));
+  const rows = Object.entries(agg).sort();
+  const tc = rows.reduce((a, [, x]) => a + x.cost, 0), tv = rows.reduce((a, [, x]) => a + x.value, 0);
+  const pct = (cost, value) => value ? ((value - cost) / value * 100).toFixed(1) + "%" : "";
+  return `<div class="stack"><div class="restricted">Restricted: client charge rates, client values and margin. Only the named list sees this page. In the real app every view and export is logged.</div>
+    <div class="head" style="margin:0"><div><div class="eyebrow">Commercial</div><h1>Margin</h1></div>
+      <div class="actions"><label for="mg" class="small" style="margin:0;align-self:center">Group by</label><select id="mg" style="width:auto">${Object.keys(groups).map((k) => `<option value="${k}" ${g === k ? "selected" : ""}>${{ gang: "Gang", site: "Site", client: "Client", week: "Week ending" }[k]}</option>`).join("")}</select></div></div>
+    <div class="tw"><table><thead><tr><th>${{ gang: "Gang", site: "Site", client: "Client", week: "Week ending" }[g]}</th><th class="num">Gang cost</th><th class="num">Client value</th><th class="num">Margin</th><th class="num">Margin %</th></tr></thead><tbody>
+    ${rows.map(([k, x]) => `<tr><td>${esc(k)}</td><td class="num">${gbp(x.cost)}</td><td class="num">${gbp(x.value)}</td><td class="num" style="color:${x.value - x.cost < 0 ? "var(--bad)" : "inherit"}">${gbp(x.value - x.cost)}</td><td class="num">${pct(x.cost, x.value)}</td></tr>`).join("")}
+    <tr><td><strong>Total</strong></td><td class="num"><strong>${gbp(tc)}</strong></td><td class="num"><strong>${gbp(tv)}</strong></td><td class="num"><strong>${gbp(tv - tc)}</strong></td><td class="num"><strong>${pct(tc, tv)}</strong></td></tr></tbody></table></div>
+    <p class="small muted" style="margin:0">Submitted, approved and paid claims at gang cost after pay-less reductions.</p>
+    <h2 style="margin:6px 0 0">Client charge rates</h2><div class="tw"><table><thead><tr><th>Client</th><th>Item</th><th class="num">Client rate</th></tr></thead><tbody>
+    ${Object.entries(S.clientRates).flatMap(([cid, r]) => Object.entries(r).map(([k, v]) => `<tr><td>${esc(client(cid).name)}</td><td>${k === "SUP" ? "Supervision (weekly)" : ["L1", "L2", "PATCH"].includes(k) ? REF.lifts.find((l) => l.id === k).name + " (per plot)" : itemName(k)}</td><td class="num">${rateFmt(v)}</td></tr>`)).join("")}
+    </tbody></table></div></div>`;
+}
+
+// ----- snags -----
+function snags() {
+  const list = S.snags.filter((n) => !isGang() || n.gang === myGang);
+  const canRaise = role() !== "gang";
+  const label = { open: "Open", in_progress: "In progress", ready: "Ready to close", closed: "Closed" };
+  return `<div class="head"><div><div class="eyebrow">Site communication</div><h1>Snags</h1></div></div><div class="stack">
+    ${list.map((n) => `<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><h3 style="margin:0">${esc(n.title)}</h3><span class="badge">${label[n.status]}</span></div>
+      <div class="small muted">${esc(site(n.site).name)}${n.plot ? ` · Plot ${esc(n.plot)}` : ""} · ${esc(S.gangs[n.gang].name)}${n.due ? ` · due ${fmtD(n.due)}` : ""}</div>
+      ${n.detail ? `<div>${esc(n.detail)}</div>` : ""}
+      ${n.updates.map((u) => `<div class="small"><strong>${esc(u.who)}</strong> ${fmtDT(u.at)}: ${esc(u.text)}</div>`).join("")}
+      ${n.status !== "closed" ? `<div class="row" style="align-items:end"><div><label for="su-${n.id}">Update</label><input id="su-${n.id}" type="text"></div>
+        <div><label for="ss-${n.id}">Status</label><select id="ss-${n.id}"><option value="">No change</option>${(isGang() ? ["in_progress", "ready"] : ["open", "in_progress", "ready", "closed"]).map((s) => `<option value="${s}">${label[s]}</option>`).join("")}</select></div>
+        <div><button class="btn ghost" data-a="snagupd" data-id="${n.id}" type="button">Save</button></div></div>` : ""}</div>`).join("") || '<div class="muted">No snags.</div>'}
+    ${canRaise ? `<div class="card accent"><h3>Raise a snag</h3><div class="row"><div><label for="ns-site">Site</label><select id="ns-site">${S.sites.filter((x) => x.active).map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
+      <div><label for="ns-gang">Assign to gang</label><select id="ns-gang">${Object.entries(S.gangs).map(([k, g]) => `<option value="${k}">${esc(g.name)}</option>`).join("")}</select></div>
+      <div><label for="ns-due">Due</label><input id="ns-due" type="date"></div></div>
+      <div><label for="ns-title">Title</label><input id="ns-title" type="text"></div><div><label for="ns-detail">Details</label><textarea id="ns-detail"></textarea></div>
+      <button class="btn" data-a="raisesnag" type="button" style="justify-self:start">Raise snag</button></div>` : ""}</div>`;
+}
+
+// ---------- actions ----------
+document.addEventListener("change", async (e) => {
+  const t = e.target;
+  if (t.id === "mg") { S.marginGroup = t.value; save(); return render(); }
+  if (t.id === "w-type" || t.id === "w-site") { readDraftInputs(); save(); return render(); }
+  if (t.dataset.sp !== undefined) { readDraftInputs(); save(); return render(); }
+  if (t.dataset.file) {
+    readDraftInputs();
+    const enh = document.querySelector(`[data-enh="${t.dataset.file}"]`)?.checked;
+    for (const f of [...t.files].slice(0, 6)) {
+      let src = "";
+      try { src = await compress(f, enh); } catch { /* keep the record without a preview */ }
+      S.draft.photos.push({ kind: t.dataset.file, name: f.name, src });
+    }
+    save(); toast("Uploaded."); render();
+  }
+});
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-a]"); if (!b) return;
+  const a = b.dataset.a, id = b.dataset.id, d = S.draft;
+  if (["next", "back", "sign", "submit", "equal", "addwall", "rmphoto", "clearsig", "discard"].includes(a)) readDraftInputs();
+  if (a === "next") { const err = validateStep(d); if (err.length) { msg = { kind: "err", text: err.join("\n") }; } else { d.step += (d.step === 2 && d.type === "supervision") ? 2 : 1; } save(); return render(); }
+  if (a === "back") { d.step -= (d.step === 4 && d.type === "supervision") ? 2 : 1; save(); return render(); }
+  if (a === "discard") { S.draft = null; save(); msg = { kind: "ok", text: "Claim discarded." }; return go("claims"); }
+  if (a === "addwall") { d.walls.push({ ref: "", courses: "" }); save(); return render(); }
+  if (a === "rmphoto") { d.photos.splice(Number(b.dataset.i), 1); save(); return render(); }
+  if (a === "clearsig") return initSig();
+  if (a === "sign") {
+    const name = $("#fm-name").value.trim();
+    if (name.length < 3 || !sigData) { msg = { kind: "err", text: [name.length < 3 ? "The foreman must type their full name." : "", !sigData ? "The foreman must sign in the box." : ""].filter(Boolean).join("\n") }; return render(); }
+    d.foreman = { name, at: new Date().toISOString(), sig: sigData }; d.step = 4; save(); return render();
+  }
+  if (a === "equal") {
+    const total = priceLines(d).reduce((x, l) => x + (l.value || 0), 0), ps = S.payees.filter((p) => p.gang === myGang && p.cleared);
+    rescale(ps.map(() => 1), total).forEach((v, i) => (d.split[ps[i].id] = (v / 100).toFixed(2))); save(); return render();
+  }
+  if (a === "submit") return submitDraft();
+  if (a === "correct") {
+    const c = S.claims.find((x) => x.id === id);
+    S.draft = { step: 1, type: c.type, site: c.site, plot: c.plot, workDate: c.workDate, qty: Object.fromEntries(c.lines.map((l) => [l.sup || l.key, String(l.qty)])),
+      walls: c.walls.length ? c.walls.map((w) => ({ ref: w.ref, courses: String(w.courses) })) : [{ ref: "", courses: "" }], notes: c.notes, photos: c.photos, foreman: null, split: {}, editing: c.id };
+    save(); return go("new");
+  }
+  const c = id && S.claims.find((x) => x.id === id);
+  if (a === "approve") { c.status = "approved"; audit(c, "Approved"); save(); msg = { kind: "ok", text: "Claim approved." }; return render(); }
+  if (a === "return") { const n = $("#ret-note").value.trim(); if (n.length < 3) { msg = { kind: "err", text: "Say what needs fixing." }; return render(); } c.status = "returned"; c.returnNote = n; audit(c, "Returned: " + n); save(); msg = { kind: "ok", text: "Returned to the gang." }; return render(); }
+  if (a === "reduce") {
+    const l = c.lines[Number($("#pl-line").value)], q = Number($("#pl-qty").value), note = $("#pl-note").value.trim(), reason = $("#pl-reason").value;
+    const errs = [];
+    if (!($("#pl-qty").value !== "" && q >= 0 && q < l.qty)) errs.push("A pay-less reduction must lower the quantity.");
+    if (note.length < 5) errs.push("Explain the reduction in the note.");
+    if (errs.length) { msg = { kind: "err", text: errs.join("\n") }; return render(); }
+    const before = val(l);
+    if (l.origQty == null) { l.origQty = l.qty; l.origValue = before; }
+    l.qty = q;
+    if (!c.splitOriginal) c.splitOriginal = { ...c.split };
+    const ids = Object.keys(c.split), oldSum = ids.reduce((x, k) => x + c.split[k], 0);
+    rescale(ids.map((k) => c.split[k]), Math.min(oldSum, claimTotal(c))).forEach((v, i) => (c.split[ids[i]] = v));
+    audit(c, `Pay-less: ${l.desc} ${l.origQty} to ${q} (${gbp(before)} to ${gbp(val(l))}). ${reason}. ${note}`);
+    save(); msg = { kind: "ok", text: "Reduction recorded. Split rescaled." }; return render();
+  }
+  if (a === "invoices") { const r = S.runs.find((x) => x.id === id); r.invoices ||= {}; let n = 0; Object.keys(payeeTotals(id)).forEach((pid) => { if (!r.invoices[pid]) { r.invoices[pid] = S.invSeq++; n++; } }); save(); msg = { kind: "ok", text: `${n} invoice${n === 1 ? "" : "s"} generated, one per gang member paid. In the real app each is a PDF.` }; return render(); }
+  if (a === "paid") { const r = S.runs.find((x) => x.id === id); if (S.claims.some((x) => x.run === id && x.status === "awaiting")) { msg = { kind: "err", text: "Some claims in this run still need sign-off." }; return render(); } r.status = "paid"; S.claims.filter((x) => x.run === id && x.status === "approved").forEach((x) => (x.status = "paid")); save(); msg = { kind: "ok", text: "Pay run marked as paid." }; return render(); }
+  if (a === "copycsv") { const ta = $("#csv"); navigator.clipboard?.writeText(ta.value).then(() => toast("CSV copied."), () => { ta.select(); toast("Selected. Copy with your keyboard."); }) ?? (ta.select(), toast("Selected. Copy with your keyboard.")); return; }
+  if (a === "addsite") {
+    const name = $("#as-name").value.trim(), job = $("#as-job").value.trim(), newc = $("#as-newclient").value.trim();
+    const plots = parsePlots($("#as-plots").value);
+    const errs = [];
+    if (name.length < 2) errs.push("Enter the site name.");
+    if (!plots) errs.push("Check the plot numbers, for example 1-20, 25.");
+    if (S.sites.some((x) => x.name.toLowerCase() === name.toLowerCase())) errs.push("A site with that name already exists.");
+    if (errs.length) { msg = { kind: "err", text: errs.join("\n") }; return render(); }
+    let cid = $("#as-client").value;
+    if (newc) { cid = "C" + Date.now(); S.clients[cid] = { name: newc, weeks: 1, ownForms: false }; }
+    S.sites.push({ id: "S" + Date.now(), name, client: cid || "", job, houseType: $("#as-ht").value.trim() || "Not set", plots, active: true });
+    save(); msg = { kind: "ok", text: `${name} added.${cid && job ? " Gangs can now claim on it." : " Add a client and job number so gangs can claim."}` }; return render();
+  }
+  if (a === "savesite") { const x = site(id); x.client = $("#sc-" + id).value; x.job = $("#sj-" + id).value.trim(); save(); msg = { kind: "ok", text: `${x.name} saved.` }; return render(); }
+  if (a === "togglesite") { const x = site(id); x.active = !x.active; save(); return render(); }
+  if (a === "addplots") {
+    const x = site(id), more = parsePlots($("#sp2-" + id).value);
+    if (!more || !more.length) { msg = { kind: "err", text: "Enter plot numbers, for example 7-12." }; return render(); }
+    more.forEach((n) => { if (!x.plots.includes(n)) x.plots.push(n); }); save(); msg = { kind: "ok", text: `Plots added to ${x.name}.` }; return render();
+  }
+  if (a === "addrate") { const r = Number($("#rr-" + id).value), dt = $("#rd-" + id).value; if (!(r >= 0) || $("#rr-" + id).value === "" || !dt) { msg = { kind: "err", text: "Enter a rate and a date." }; return render(); } S.rateSets[id].rates.push({ item: $("#ri-" + id).value, rate: r, from: dt }); save(); msg = { kind: "ok", text: "Rate saved." }; return render(); }
+  if (a === "clear") { const p = S.payees.find((x) => x.id === id); p.cleared = !p.cleared; save(); return render(); }
+  if (a === "raisesnag") { const t = $("#ns-title").value.trim(); if (t.length < 3) { msg = { kind: "err", text: "Give the snag a title." }; return render(); } S.snags.unshift({ id: "N" + Date.now(), site: $("#ns-site").value, gang: $("#ns-gang").value, due: $("#ns-due").value, title: t, detail: $("#ns-detail").value.trim(), status: "open", updates: [] }); save(); msg = { kind: "ok", text: "Snag raised." }; return render(); }
+  if (a === "snagupd") { const n = S.snags.find((x) => x.id === id), text = $("#su-" + id).value.trim(), st = $("#ss-" + id).value; if (!text && !st) { msg = { kind: "err", text: "Add an update or change the status." }; return render(); } n.updates.push({ who: { gang: "Alex Demo", cm: "Demo Contracts Manager", manager: "Demo Manager", named: "Demo Director" }[role()], at: new Date().toISOString(), text: text || "Status changed" }); if (st) n.status = st; save(); return render(); }
+});
+render();
+})();
+</script>
+
+</body>
+</html>

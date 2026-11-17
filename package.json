@@ -1,0 +1,44 @@
+{
+  "name": "ks-claims",
+  "version": "0.1.0",
+  "private": true,
+  "description": "K-S subcontractor claims app (web MVP)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "start:hosted": "tsx scripts/bootstrap-roles.ts && tsx scripts/migrate.ts && tsx scripts/bootstrap-data.ts && next start -p ${PORT:-3000}",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed-demo": "tsx scripts/seed-demo.ts",
+    "db:seed-private": "tsx scripts/seed-private.ts",
+    "commercial:access": "tsx scripts/commercial-access.ts",
+    "test": "vitest run",
+    "test:leaks": "playwright test --trace off"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.3",
+    "exceljs": "4.4.0",
+    "jszip": "3.10.2",
+    "next": "16.4.5",
+    "pdf-lib": "1.17.1",
+    "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "server-only": "0.0.1",
+    "tsx": "4.23.15",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
