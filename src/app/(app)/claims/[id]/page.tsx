@@ -70,7 +70,10 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
       <div className="page-head">
         <div><div className="eyebrow">{TYPE_LABEL[c.claim_type]} claim</div><h1>{c.ref}</h1>
           <p className="muted small">{ctx.gang} · {ctx.client} · {ctx.site} · {ctx.job}{ctx.plot ? ` · Plot ${ctx.plot}` : ""}{ctx.house_type ? ` · ${ctx.house_type}` : ""}</p></div>
-        <div className="actions"><span className={`badge ${c.status}`}>{STATUS_LABEL[c.status]}</span></div>
+        <div className="actions">
+          <span className={`badge ${c.status}${c.status === "awaiting_management" ? " submitted" : ""}`}>{STATUS_LABEL[c.status]}</span>
+          {sig && <span className="badge signed">Signed</span>}
+        </div>
       </div>
       <Flash sp={sp} />
       {c.status === "returned" && lastReturn && <div className="alert warn">Returned by K-S on {fmtDateTime(lastReturn.created_at)}: {lastReturn.comment}</div>}
@@ -100,7 +103,7 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
         {sig ? (
           <>
             <p style={{ marginTop: 0 }}>Signed by <strong>{sig.foreman_name}</strong> on {fmtDateTime(sig.signed_at)}.</p>
-            <img src={`/api/files/${sig.attachment_id}`} alt={`Signature of ${sig.foreman_name}`} style={{ maxWidth: 320, border: "1px solid var(--line)", borderRadius: 6 }} />
+            <img className="sig-preview" src={`/api/files/${sig.attachment_id}`} alt={`Signature of ${sig.foreman_name}`} />
             <p className="small muted">Given on the gang&apos;s device in good faith. The app records the typed name and signature; it does not verify identity.</p>
           </>
         ) : <p className="muted" style={{ margin: 0 }}>Not signed.</p>}
@@ -109,7 +112,7 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
       {showSplits && splits.length > 0 && (
         <>
           <h2>Split</h2>
-          <div className="table-wrap"><table>
+          <div className="table-wrap dense"><table>
             <thead><tr><th>Payee</th><th className="num">Amount</th>{mgr && <th className="num">Before reductions</th>}</tr></thead>
             <tbody>{splits.map((s, i) => (
               <tr key={i}><td>{s.name}{s.legal_name !== s.name && <div className="small muted">{s.legal_name}</div>}</td>
@@ -145,7 +148,7 @@ async function ManagementPanel({ claimId, status, paylessOpen, hasRun }: { claim
     <>
       <h2>Management</h2>
       {flags.length > 0 && <div className="alert warn"><strong>Flags</strong>{flags.map((f, i) => <div key={i}>{f.message}</div>)}</div>}
-      <div className="table-wrap" style={{ marginBottom: 16 }}><table>
+      <div className="table-wrap dense" style={{ marginBottom: 16 }}><table>
         <thead><tr><th>Line</th><th className="num">Quantity</th><th className="num">Gang rate</th><th>Rate from</th><th className="num">Gang value</th><th className="num">Originally</th></tr></thead>
         <tbody>
           {lines.map((l) => (
@@ -215,7 +218,7 @@ async function ManagementPanel({ claimId, status, paylessOpen, hasRun }: { claim
       {adjustments.length > 0 && (
         <>
           <h3>Reductions</h3>
-          <div className="table-wrap"><table>
+          <div className="table-wrap dense"><table>
             <thead><tr><th>When</th><th>Who</th><th>Line</th><th>Change</th><th>Reason</th></tr></thead>
             <tbody>{adjustments.map((a, i) => (
               <tr key={i}><td className="small">{fmtDateTime(a.created_at)}</td><td>{a.who}</td><td>{a.description}</td>

@@ -29,7 +29,7 @@ export default async function ClaimSummary({ claimId }: { claimId: string }) {
               <a href={`/api/files/${f.id}`} target="_blank" rel="noreferrer">
                 {f.mime.startsWith("image/") && f.mime !== "image/heic"
                   ? <img src={`/api/files/${f.id}`} alt={f.original_name} />
-                  : <div style={{ width: 120, height: 90, display: "grid", placeItems: "center", background: "#EEE", borderRadius: 6 }}>Open file</div>}
+                  : <div className="file-tile">Open file</div>}
               </a>
               <figcaption>{f.kind.replace("_", " ")}</figcaption>
             </figure>

@@ -16,7 +16,7 @@ export default function SignaturePad({ name }: { name: string }) {
     ctx.scale(ratio, ratio);
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, c.width, c.height);
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3.25;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#111";
@@ -49,11 +49,14 @@ export default function SignaturePad({ name }: { name: string }) {
   }
 
   return (
-    <div>
-      <canvas ref={canvas} className="sigpad" aria-label="Signature box. Sign with your finger." />
+    <div className="sig-field">
+      <div className="sig-frame">
+        <canvas ref={canvas} className="sigpad" aria-label="Signature box. Sign with your finger." />
+        <span className="sig-guide" aria-hidden="true">Sign on the line</span>
+      </div>
       <input ref={hidden} type="hidden" name={name} />
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-        <span className="small muted">{empty ? "Sign in the box above." : "Signed."}</span>
+      <div className="sig-bar">
+        <span className={empty ? "sig-state" : "sig-state ok"}>{empty ? "Not signed yet" : "Signature captured"}</span>
         <button type="button" className="btn secondary small" onClick={clear}>Clear</button>
       </div>
     </div>

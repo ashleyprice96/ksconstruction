@@ -63,7 +63,7 @@ export default async function Commercial({ searchParams }: { searchParams: Promi
         <div style={{ alignSelf: "end" }}><button className="btn secondary" type="submit">Show</button></div>
       </form>
       <p className="small muted">Submitted, approved and paid claims, at gang cost after pay-less reductions. Lines with no client rate set are counted as unpriced and add nothing to client value.</p>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>{GROUPS[group]}</th><th className="num">Gang cost</th><th className="num">Client value</th><th className="num">Margin</th><th className="num">Margin %</th><th className="num">Unpriced lines</th></tr></thead>
         <tbody>
           {rows.length === 0 && <tr><td colSpan={6} className="muted">No claims in this period.</td></tr>}
@@ -79,7 +79,7 @@ export default async function Commercial({ searchParams }: { searchParams: Promi
 
       <h2>Client charge rates</h2>
       <p className="small muted">From each client&apos;s master sheet. A site rate overrides the client&apos;s general rate. Add a new row with a later date for an uplift; earlier claims keep the rate in force on their work date.</p>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Client</th><th>Site</th><th>Item</th><th className="num">Rate</th><th>Effective from</th></tr></thead>
         <tbody>{rates.map((r) => <tr key={r.id}><td>{r.client}</td><td>{r.site ?? "All sites"}</td><td>{r.item} <span className="muted small">per {r.unit}</span></td><td className="num">{gbpRate(r.rate)}</td><td>{fmtDate(r.effective_from)}</td></tr>)}</tbody>
       </table></div>
@@ -96,7 +96,7 @@ export default async function Commercial({ searchParams }: { searchParams: Promi
       </form>
 
       <h2>Client lift and patch values</h2>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Client</th><th>House type</th><th>Lift</th><th className="num">Client value</th><th>Effective from</th></tr></thead>
         <tbody>{lifts.map((l, i) => <tr key={i}><td>{l.client}</td><td>{l.house_type}</td><td>{l.lift}</td><td className="num">{gbp(l.value)}</td><td>{fmtDate(l.effective_from)}</td></tr>)}</tbody>
       </table></div>

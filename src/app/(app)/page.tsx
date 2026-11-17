@@ -36,17 +36,17 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <p className="small muted">Claims submitted now count towards week ending <strong>{fmtDate(weekEnding)}</strong>. Cut-off: {days[cutoff.weekday]} {cutoff.time}.</p>
       <div className="grid">
         {user.role === "gang" && <>
-          <Link href="/claims?status=draft" className="stat" style={{ textDecoration: "none" }}><div className="n">{counts?.drafts}</div><div className="l">Drafts to finish</div></Link>
-          <Link href="/claims?status=returned" className="stat" style={{ textDecoration: "none" }}><div className="n">{counts?.returned}</div><div className="l">Returned for correction</div></Link>
-          <Link href="/claims?status=awaiting_management" className="stat" style={{ textDecoration: "none" }}><div className="n">{counts?.awaiting}</div><div className="l">Waiting for K-S sign-off</div></Link>
+          <Link href="/claims?status=draft" className="stat"><div className="n">{counts?.drafts}</div><div className="l">Drafts to finish</div></Link>
+          <Link href="/claims?status=returned" className="stat"><div className="n">{counts?.returned}</div><div className="l">Returned for correction</div></Link>
+          <Link href="/claims?status=awaiting_management" className="stat"><div className="n">{counts?.awaiting}</div><div className="l">Waiting for K-S sign-off</div></Link>
         </>}
         {user.role !== "gang" && <>
-          <Link href="/claims?status=awaiting_management" className="stat" style={{ textDecoration: "none" }}><div className="n">{counts?.awaiting}</div><div className="l">Awaiting sign-off</div></Link>
-          {mgr && <Link href="/claims?status=awaiting_management" className="stat" style={{ textDecoration: "none" }}><div className="n">{counts?.flagged}</div><div className="l">Flagged for checking</div></Link>}
+          <Link href="/claims?status=awaiting_management" className="stat"><div className="n">{counts?.awaiting}</div><div className="l">Awaiting sign-off</div></Link>
+          {mgr && <Link href="/claims?status=awaiting_management" className="stat"><div className="n">{counts?.flagged}</div><div className="l">Flagged for checking</div></Link>}
         </>}
-        <Link href="/issues" className="stat" style={{ textDecoration: "none" }}><div className="n">{issues?.open}</div><div className="l">Open snags</div></Link>
+        <Link href="/issues" className="stat"><div className="n">{issues?.open}</div><div className="l">Open snags</div></Link>
         {nextRun && (
-          <div className="stat"><div className="n" style={{ fontSize: "1.2rem" }}>{fmtDate(nextRun.payment_date)}</div>
+          <div className="stat stat-when"><div className="n">{fmtDate(nextRun.payment_date)}</div>
             <div className="l">Next payment run{mgr ? `. Pay-less window closes ${fmtDate(nextRun.payless_closes_at)}` : ""}</div></div>
         )}
       </div>

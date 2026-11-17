@@ -290,7 +290,7 @@ async function SitesTab() {
     <>
       <h2>Sites</h2>
       <p className="small muted">Client is who K-S invoices; housebuilder is whose development it is. They can differ.</p>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Site</th><th>Job numbers</th><th>Plots</th><th>Client, housebuilder, active</th></tr></thead>
         <tbody>{sites.map((site) => (
           <tr key={site.id}><td>{site.name}<div className="small muted">{site.region}</div></td><td className="small">{site.jobs ?? <span style={{ color: "var(--bad)" }}>None: gangs cannot claim</span>}</td><td>{site.plots}</td>
@@ -336,7 +336,7 @@ async function SitesTab() {
 
       <h2>House types, lifts and patch (gang values)</h2>
       <p className="small muted">Superstructure is a fixed gang price per plot and house type, split into lifts plus patch. The lift and patch values are still to be supplied by K-S. Client values for the same lifts are entered in the restricted commercial area.</p>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>House type</th><th>Lift</th><th className="num">Gang value</th><th>Since</th><th>New value</th></tr></thead>
         <tbody>{lifts.map((l) => (
           <tr key={l.id}><td>{l.house_type}</td><td>{l.name}</td><td className="num">{l.gang_value ? gbp(l.gang_value) : "Not set"}</td><td>{l.effective_from ? fmtDate(l.effective_from) : ""}</td>
@@ -361,7 +361,7 @@ async function SitesTab() {
       </div>
 
       <h2>Clients and housebuilders</h2>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Client</th><th>Invoiced every</th><th>Own forms only</th></tr></thead>
         <tbody>{clients.map((c) => <tr key={c.id}><td>{c.name}</td><td>{c.invoice_frequency_weeks} week{c.invoice_frequency_weeks > 1 ? "s" : ""}</td><td>{c.uses_own_forms ? "Yes" : "No"}</td></tr>)}</tbody>
       </table></div>
@@ -396,7 +396,7 @@ async function GangsTab() {
       {gangs.map((g) => (
         <div key={g.id} className="card">
           <h3 style={{ marginTop: 0 }}>{g.name} <span className="muted small">ganger: {g.ganger_name}</span></h3>
-          <div className="table-wrap"><table>
+          <div className="table-wrap dense"><table>
             <thead><tr><th>Member</th><th>Entity</th><th>Payment ref</th><th>Cleared for payment</th></tr></thead>
             <tbody>{payees.filter((p) => p.gang_id === g.id).map((p) => (
               <tr key={p.id}><td>{p.name}{p.legal_name !== p.name && <div className="small muted">{p.legal_name}</div>}</td><td>{p.entity_type.replace("_", " ")}</td><td>{p.payment_ref ?? ""}</td>
@@ -429,7 +429,7 @@ async function GangsTab() {
           <button className="btn secondary" type="submit">Import</button></form>
       </div>
       <h2>Working supervisors</h2>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Supervisor</th><th>Site</th><th className="num">Weekly amount</th><th>From</th><th>To</th></tr></thead>
         <tbody>{sups.map((x, i) => <tr key={i}><td>{x.payee}</td><td>{x.site}</td><td className="num">{gbp(x.weekly_amount)}</td><td>{fmtDate(x.start_date)}</td><td>{x.end_date ? fmtDate(x.end_date) : "Ongoing"}</td></tr>)}</tbody>
       </table></div>
@@ -456,7 +456,7 @@ async function UsersTab({ user }: { user: User }) {
   return (
     <>
       <div className="alert info">Margin access is not a role. It comes only from the named list, which is changed outside the app by the system owner (see the README). Making someone a manager does not give them access.</div>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th colSpan={2}>Name and login email</th><th>Role</th><th>Status</th><th>Reset password</th></tr></thead>
         <tbody>{users.map((u) => (
           <tr key={u.id}><td colSpan={2}><form action={editLogin} className="row" style={{ alignItems: "end" }}><input type="hidden" name="user_id" value={u.id} />

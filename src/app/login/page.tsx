@@ -14,14 +14,15 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <div className="login-wrap">
       <div className="login-card">
-        <img src="/ks-logo.png" alt="K-S" />
-        <h1 style={{ textAlign: "center" }}>K-S Claims</h1>
-        <p className="muted small" style={{ textAlign: "center" }}>Sign in with your K-S account.</p>
+        <img src="/ks-logo.png" alt="" width={72} height={72} />
+        <p className="eyebrow">K-S Construction Group</p>
+        <h1>Claims</h1>
+        <p className="lede">Sign in with your K-S account.</p>
         {sp.error && <div className="alert error" role="alert">Email or password not recognised.</div>}
         <form action={doLogin} className="stack">
           <div><label htmlFor="email">Email</label><input id="email" name="email" type="email" autoComplete="username" required /></div>
           <div><label htmlFor="password">Password</label><input id="password" name="password" type="password" autoComplete="current-password" required /></div>
-          <button className="btn" type="submit" style={{ width: "100%" }}>Sign in</button>
+          <button className="btn" type="submit">Sign in</button>
         </form>
       </div>
     </div>

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireUser, logout } from "@/lib/auth";
 import { isNamedUser } from "@/lib/commercial";
 import { redirect } from "next/navigation";
+import MainNav from "@/components/MainNav";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const ROLE_LABEL = { gang: "Gang", contracts_manager: "Contracts manager", management: "Management", admin: "Administrator" } as const;
 
@@ -25,27 +27,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (named) links.push({ href: "/commercial", label: "Margin", restricted: true });
   return (
     <>
+      <a className="skip" href="#content">Skip to content</a>
       <header className="topbar">
         <div className="topbar-inner">
           <Link href="/" className="brand">
-            <img src="/ks-logo.png" alt="" />
-            <span>K-S<small>CLAIMS</small></span>
+            <img src="/ks-logo.png" alt="" width={40} height={40} />
+            <span><b>K-S</b><small>CLAIMS</small></span>
           </Link>
           <div className="who">
-            <span className="name">{user.name} · </span>{ROLE_LABEL[user.role]}
-            <br />
+            <div className="who-id">
+              <span className="name">{user.name}</span>
+              <span className="role">{ROLE_LABEL[user.role]}</span>
+            </div>
+            <ThemeToggle />
             <form action={signOut}><button type="submit">Sign out</button></form>
           </div>
         </div>
-        <nav className="mainnav" aria-label="Main">
-          <ul>
-            {links.map((l) => (
-              <li key={l.href}><Link href={l.href} className={l.restricted ? "restricted" : undefined}>{l.label}</Link></li>
-            ))}
-          </ul>
-        </nav>
+        <MainNav links={links} />
       </header>
-      <main>{children}</main>
+      <main id="content">{children}</main>
     </>
   );
 }

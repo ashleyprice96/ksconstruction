@@ -8,12 +8,14 @@ const STEPS = [
 ];
 
 export default function ClaimSteps({ id, current, signatureRequired = true }: { id: string; current: string; signatureRequired?: boolean }) {
+  const visible = STEPS.filter((s) => signatureRequired || s.key !== "sign");
+  const here = visible.findIndex((s) => s.key === current);
   return (
     <div className="steps" aria-label="Claim steps">
-      {STEPS.filter((s) => signatureRequired || s.key !== "sign").map((s) =>
+      {visible.map((s, i) =>
         s.key === current
           ? <span key={s.key} className="current" aria-current="step">{s.label}</span>
-          : <Link key={s.key} href={`/claims/${id}/${s.key}`}>{s.label}</Link>)}
+          : <Link key={s.key} href={`/claims/${id}/${s.key}`} className={i < here ? "done" : undefined}>{s.label}</Link>)}
     </div>
   );
 }

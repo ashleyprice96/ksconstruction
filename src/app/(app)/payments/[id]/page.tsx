@@ -59,7 +59,7 @@ export default async function PayRun({ params, searchParams }: { params: Promise
       <Flash sp={sp} />
       <p className="small muted">Exports include approved claims only: wages by payee, gang splits, dayworks, supervision and pay-less reductions. Gross amounts; VAT, CIS and net pay are handled by the payment company and accountant.</p>
       <h2>Wages by payee</h2>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Payee</th><th>Gang</th><th className="num">Measured</th><th className="num">Daywork</th><th className="num">Supervision</th><th className="num">Reductions</th><th className="num">Total</th></tr></thead>
         <tbody>
           {totals.length === 0 && <tr><td colSpan={7} className="muted">No approved claims yet.</td></tr>}
@@ -75,18 +75,18 @@ export default async function PayRun({ params, searchParams }: { params: Promise
       <h2>Invoices</h2>
       <form action={invoices}><input type="hidden" name="run_id" value={id} /><button className="btn secondary" type="submit">Generate or refresh invoices</button></form>
       {invs.length > 0 && (
-        <div className="table-wrap" style={{ marginTop: 12 }}><table>
+        <div className="table-wrap dense" style={{ marginTop: 12 }}><table>
           <thead><tr><th>Invoice</th><th>Payee</th><th className="num">Total</th></tr></thead>
           <tbody>{invs.map((i) => <tr key={i.id}><td><a href={`/api/invoices/${i.id}`}>{i.number}</a></td><td>{i.payee}</td><td className="num">{gbp(i.total)}</td></tr>)}</tbody>
         </table></div>
       )}
 
       <h2>Claims in this run</h2>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Claim</th><th>Gang</th><th>Site</th><th>Status</th><th className="num">Gang value</th></tr></thead>
         <tbody>{claims.map((c) => (
           <tr key={c.id}><td><Link href={`/claims/${c.id}`}>{c.ref}</Link></td><td>{c.gang}</td><td>{c.site}</td>
-            <td><span className={`badge ${c.status}`}>{STATUS_LABEL[c.status]}</span>{Number(c.flags) > 0 && <> <span className="badge flag">flagged</span></>}</td>
+            <td><span className={`badge ${c.status}${c.status === "awaiting_management" ? " submitted" : ""}`}>{STATUS_LABEL[c.status]}</span>{Number(c.flags) > 0 && <> <span className="badge flag">flagged</span></>}</td>
             <td className="num">{c.value ? gbp(c.value) : ""}</td></tr>
         ))}</tbody>
       </table></div>
