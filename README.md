@@ -103,6 +103,12 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 | `ADMIN_NAMED_LIST` | No | `true` puts that administrator on the commercial named list. |
 | `PRIVATE_SEED_B64` | No | Base64 of `private/seed.private.json`. Loaded on boot. Remove it after it has loaded. Do not use the demo seed for real sites. |
 | `UPLOAD_DIR` | No | Defaults to `./uploads`. Render's disk is ephemeral, so uploaded photos do not survive a restart until object storage is wired up. |
+| `RESET_REQUEST_EMAIL` | No | Office inbox that receives password-reset requests. If this or `SMTP_HOST` is unset, the request is still recorded in Setup and no email is sent. |
+| `SMTP_HOST` | No | SMTP server. Leave unset to skip email. |
+| `SMTP_PORT` | No | Defaults to `587`. Port `465` uses TLS from the start. |
+| `SMTP_USER` | No | SMTP username, if the server requires authentication. |
+| `SMTP_PASS` | No | SMTP password. |
+| `SMTP_FROM` | No | From address. Defaults to `SMTP_USER`, then `RESET_REQUEST_EMAIL`. |
 
 ## Production notes
 

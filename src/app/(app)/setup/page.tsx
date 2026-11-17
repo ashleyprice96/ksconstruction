@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { requireUser, type User } from "@/lib/auth";
+import { isNamedUser } from "@/lib/commercial";
+import { changeNamedList, namedListForAdmin, MarginAccessError } from "@/lib/margin-access";
+import { NotNamedUser } from "@/lib/commercial";
+import { fulfilResetRequest } from "@/lib/passwords";
 import { q, tx } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { changeLogin, createUser, importEligibility, resetPassword, setUserActive, AdminError } from "@/lib/admin";
@@ -17,7 +21,7 @@ async function runAct(section: string, f: FormData, fn: (user: User) => Promise<
   try { msg = await fn(user); }
   catch (e) {
     const pgUnique = e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505";
-    back(`${P}?s=${section}`, "error", pgUnique ? "That already exists." : safeMessage(e, [AdminError]));
+    back(`${P}?s=${section}`, "error", pgUnique ? "That already exists." : safeMessage(e, [AdminError, MarginAccessError, NotNamedUser]));
   }
   back(`${P}?s=${section}`, "ok", msg);
 }
@@ -211,7 +215,7 @@ async function addSupervision(f: FormData) {
 async function newUser(f: FormData) {
   "use server";
   await runAct("users", f, async (u) => {
-  await createUser(u, { email: str(f, "email"), name: str(f, "name"), role: str(f, "role"), gangId: str(f, "gang_id") || null, password: String(f.get("password") ?? "") });
+  await createUser(u, { email: str(f, "email"), username: str(f, "username"), name: str(f, "name"), role: str(f, "role"), gangId: str(f, "gang_id") || null, password: String(f.get("password") ?? "") });
   return "User created. Give them their password in person, not by email.";
 });
 }
@@ -223,11 +227,30 @@ async function resetPw(f: FormData) {
 
 async function editLogin(f: FormData) {
   "use server";
-  await runAct("users", f, async (u) => { await changeLogin(u, str(f, "user_id"), str(f, "email"), str(f, "name")); return "Login updated."; });
+  await runAct("users", f, async (u) => { await changeLogin(u, str(f, "user_id"), str(f, "email"), str(f, "username"), str(f, "name")); return "Login updated."; });
 }
 async function toggleUser(f: FormData) {
   "use server";
   await runAct("users", f, async (u) => { await setUserActive(u, str(f, "user_id"), str(f, "active") === "true"); return "User updated."; });
+}
+
+async function issueTemporary(f: FormData) {
+  "use server";
+  await runAct("users", f, async (u) => fulfilResetRequest(u, str(f, "request_id")));
+}
+async function addMargin(f: FormData) {
+  "use server";
+  await runAct("margin", f, async (u) => {
+    await changeNamedList(u, str(f, "user_id"), "add", str(f, "reason"));
+    return "Added to the named list.";
+  });
+}
+async function removeMargin(f: FormData) {
+  "use server";
+  await runAct("margin", f, async (u) => {
+    await changeNamedList(u, str(f, "user_id"), "remove", str(f, "reason"));
+    return "Removed from the named list.";
+  });
 }
 
 async function saveSettings(f: FormData) {
@@ -250,23 +273,32 @@ async function saveSettings(f: FormData) {
 });
 }
 
-const TABS = { sites: "Sites and plots", gangs: "Gangs and payees", users: "Users", settings: "Settings" } as const;
+const TABS = { sites: "Sites and plots", gangs: "Gangs and payees", users: "Users", settings: "Settings", margin: "Margin access" } as const;
 
 export default async function Setup({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const user = await requireUser(["management", "admin"]);
   const sp = await searchParams;
-  const s = (sp.s in TABS ? sp.s : "sites") as keyof typeof TABS;
+  const namedAdmin = user.role === "admin" && await isNamedUser(user);
+  const tabs = (Object.entries(TABS) as [keyof typeof TABS, string][]).filter(([k]) => k !== "margin" || namedAdmin);
+  const s = (tabs.some(([k]) => k === sp.s) ? sp.s : "sites") as keyof typeof TABS;
+  const pending = await q1count();
   return (
     <>
       <div className="page-head"><div><div className="eyebrow">Management</div><h1>Setup</h1></div></div>
-      <div className="steps">{Object.entries(TABS).map(([k, v]) => k === s ? <span key={k} className="current">{v}</span> : <Link key={k} href={`${P}?s=${k}`}>{v}</Link>)}</div>
+      <div className="steps">{tabs.map(([k, v]) => k === s ? <span key={k} className="current">{v}{k === "users" && pending > 0 ? ` (${pending})` : ""}</span> : <Link key={k} href={`${P}?s=${k}`}>{v}{k === "users" && pending > 0 ? ` (${pending})` : ""}</Link>)}</div>
       <Flash sp={sp} />
       {s === "sites" && <SitesTab />}
       {s === "gangs" && <GangsTab />}
       {s === "users" && <UsersTab user={user} />}
       {s === "settings" && <SettingsTab />}
+      {s === "margin" && namedAdmin && <MarginTab actor={user} />}
     </>
   );
+}
+
+async function q1count() {
+  const r = await q<{ n: string }>("SELECT count(*)::text AS n FROM ops.password_reset_requests WHERE status = 'pending' AND user_id IS NOT NULL");
+  return Number(r[0]?.n ?? 0);
 }
 
 async function SitesTab() {
@@ -448,20 +480,44 @@ async function GangsTab() {
 }
 
 async function UsersTab({ user }: { user: User }) {
-  const [users, gangs] = await Promise.all([
-    q<{ id: string; email: string; name: string; role: string; gang: string | null; active: boolean }>(
-      "SELECT u.id, u.email, u.name, u.role, g.name AS gang, u.active FROM ops.users u LEFT JOIN ops.gangs g ON g.id = u.gang_id ORDER BY u.active DESC, u.role, u.name"),
-    q<{ id: string; name: string }>("SELECT id, name FROM ops.gangs WHERE active ORDER BY name"),
+  const [users, gangs, requests] = await Promise.all([
+    q<{ id: string; email: string | null; username: string | null; name: string; role: string; gang: string | null; active: boolean }>(
+      "SELECT u.id, u.email, u.username, u.name, u.role, g.name AS gang, u.active FROM ops.users u LEFT JOIN ops.gangs g ON g.id = u.gang_id ORDER BY u.active DESC, u.role, u.name"),
+    q<{ id: string; name: string; ganger_name: string; has_login: boolean }>(
+      `SELECT g.id, g.name, g.ganger_name,
+         EXISTS (SELECT 1 FROM ops.users u WHERE u.gang_id = g.id AND u.role = 'gang' AND u.active) AS has_login
+       FROM ops.gangs g WHERE g.active ORDER BY has_login, g.name`),
+    q<{ id: string; identifier: string; created_at: string; name: string; username: string | null; email: string | null }>(
+      `SELECT r.id, r.identifier, r.created_at, u.name, u.username, u.email
+       FROM ops.password_reset_requests r JOIN ops.users u ON u.id = r.user_id
+       WHERE r.status = 'pending' ORDER BY r.created_at`),
   ]);
   return (
     <>
-      <div className="alert info">Margin access is not a role. It comes only from the named list, which is changed outside the app by the system owner (see the README). Making someone a manager does not give them access.</div>
+      <div className="alert info">Margin access is not a role. Making someone a manager does not put them on the named list. A named-list administrator changes that list under Margin access.</div>
+      <section className="panel">
+        <div className="panel-head"><h2>Password reset requests {requests.length > 0 && <span className="badge awaiting_management">{requests.length} pending</span>}</h2></div>
+        {requests.length === 0 ? <p className="muted small">No pending requests.</p> : (
+          <div className="table-wrap dense"><table>
+            <thead><tr><th>When</th><th>Person</th><th>They typed</th><th></th></tr></thead>
+            <tbody>{requests.map((r) => (
+              <tr key={r.id}>
+                <td>{fmtDateTime(r.created_at)}</td>
+                <td>{r.name}<div className="small muted">{r.username || r.email}</div></td>
+                <td>{r.identifier}</td>
+                <td className="actions"><form action={issueTemporary}><input type="hidden" name="request_id" value={r.id} /><button className="btn small" type="submit">Set temporary password</button></form></td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        )}
+      </section>
       <div className="table-wrap dense"><table>
-        <thead><tr><th colSpan={2}>Name and login email</th><th>Role</th><th>Status</th><th>Reset password</th></tr></thead>
+        <thead><tr><th>Name, username and email</th><th>Role</th><th>Status</th><th>Reset password</th></tr></thead>
         <tbody>{users.map((u) => (
-          <tr key={u.id}><td colSpan={2}><form action={editLogin} className="row" style={{ alignItems: "end" }}><input type="hidden" name="user_id" value={u.id} />
+          <tr key={u.id}><td><form action={editLogin} className="row" style={{ alignItems: "end" }}><input type="hidden" name="user_id" value={u.id} />
               <input name="name" type="text" defaultValue={u.name} required aria-label={`Name of ${u.name}`} />
-              <input name="email" type="text" defaultValue={u.email} required aria-label={`Login email of ${u.name}`} />
+              <input name="username" type="text" defaultValue={u.username ?? ""} aria-label={`Username of ${u.name}`} autoComplete="off" placeholder="username" />
+              <input name="email" type="text" defaultValue={u.email ?? ""} aria-label={`Email of ${u.name}`} placeholder="email" />
               <button className="btn secondary small" type="submit">Save</button></form></td><td>{u.role.replace("_", " ")}{u.gang ? `: ${u.gang}` : ""}</td>
             <td><form action={toggleUser}><input type="hidden" name="user_id" value={u.id} /><input type="hidden" name="active" value={u.active ? "false" : "true"} />
               <span className={`badge ${u.active ? "approved" : "returned"}`}>{u.active ? "Active" : "Inactive"}</span>{" "}
@@ -472,14 +528,66 @@ async function UsersTab({ user }: { user: User }) {
         ))}</tbody>
       </table></div>
       <form action={newUser} className="card stack" style={{ marginTop: 16 }}><h3 style={{ marginTop: 0 }}>Add user</h3>
+        <p className="small muted">Gang leads are already stored as gangs. Choose that gang to give the lead a login. They need a username, an email, or both. The starting password must be changed at the first sign-in.</p>
         <div className="row">
           <div><label htmlFor="nu_name">Name</label><input id="nu_name" name="name" type="text" required /></div>
-          <div><label htmlFor="nu_email">Email</label><input id="nu_email" name="email" type="email" required /></div>
+          <div><label htmlFor="nu_user">Username<span className="hint">Lowercase letters, digits, dots and hyphens. For example jane.smith.</span></label><input id="nu_user" name="username" type="text" autoComplete="off" /></div>
+          <div><label htmlFor="nu_email">Email<span className="hint">Optional for a gang lead.</span></label><input id="nu_email" name="email" type="text" autoComplete="off" /></div>
           <div><label htmlFor="nu_role">Role</label><select id="nu_role" name="role"><option value="gang">Gang account</option><option value="contracts_manager">Contracts manager</option><option value="management">Management</option>{user.role === "admin" && <option value="admin">Administrator</option>}</select></div>
-          <div><label htmlFor="nu_gang">Gang (gang accounts)</label><select id="nu_gang" name="gang_id"><option value="">None</option>{gangs.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
+          <div><label htmlFor="nu_gang">Gang<span className="hint">Required for a gang account.</span></label><select id="nu_gang" name="gang_id"><option value="">None</option>{gangs.map((g) => <option key={g.id} value={g.id}>{g.ganger_name} — {g.name}{g.has_login ? " (already has a login)" : ""}</option>)}</select></div>
           <div><label htmlFor="nu_pw">Starting password</label><input id="nu_pw" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
         </div>
-        <button className="btn secondary" type="submit">Add user</button></form>
+        <button className="btn" type="submit">Add user</button></form>
+    </>
+  );
+}
+
+async function MarginTab({ actor }: { actor: User }) {
+  const [{ members, history }, people] = await Promise.all([
+    namedListForAdmin(actor),
+    q<{ id: string; name: string; email: string | null; username: string | null; role: string }>(
+      "SELECT id, name, email, username, role::text FROM ops.users WHERE active ORDER BY name"),
+  ]);
+  const onList = new Set(members.map((m) => m.user_id));
+  return (
+    <>
+      <div className="restricted-banner">Named list only. Client rates stay in the commercial schema. This page does not show them.</div>
+      <section className="panel">
+        <div className="panel-head"><h2>Who can open Margin</h2></div>
+        <div className="table-wrap dense"><table>
+          <thead><tr><th>Person</th><th>Added</th><th>Reason</th><th></th></tr></thead>
+          <tbody>
+            {members.map((m) => (
+              <tr key={m.user_id}>
+                <td>{m.name}<div className="small muted">{m.username || m.email} · {m.role.replace("_", " ")}</div></td>
+                <td>{fmtDateTime(m.added_at)}<div className="small muted">{m.added_by}</div></td>
+                <td>{m.reason}</td>
+                <td className="actions">{m.user_id !== actor.id && (
+                  <form action={removeMargin} className="row" style={{ alignItems: "end" }}>
+                    <input type="hidden" name="user_id" value={m.user_id} />
+                    <input name="reason" type="text" required minLength={3} placeholder="Reason" aria-label={`Reason for removing ${m.name}`} />
+                    <button className="btn danger small" type="submit">Remove</button>
+                  </form>
+                )}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+        <form action={addMargin} className="row" style={{ alignItems: "end", marginTop: 12 }}>
+          <div><label htmlFor="ma_user">Add a user</label><select id="ma_user" name="user_id" required>
+            {people.filter((p) => !onList.has(p.id)).map((p) => <option key={p.id} value={p.id}>{p.name} ({p.username || p.email})</option>)}
+          </select></div>
+          <div><label htmlFor="ma_reason">Reason</label><input id="ma_reason" name="reason" type="text" required minLength={3} /></div>
+          <button className="btn" type="submit">Add to named list</button>
+        </form>
+      </section>
+      <h2>Audit trail</h2>
+      <div className="table-wrap dense"><table>
+        <thead><tr><th>When</th><th>Person</th><th>Action</th><th>By</th><th>Reason</th></tr></thead>
+        <tbody>{history.map((h, i) => (
+          <tr key={i}><td>{fmtDateTime(h.at)}</td><td>{h.name}</td><td>{h.action}</td><td>{h.changed_by}</td><td>{h.reason}</td></tr>
+        ))}</tbody>
+      </table></div>
     </>
   );
 }

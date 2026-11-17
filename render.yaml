@@ -36,3 +36,17 @@ services:
         value: "true"
       - key: NODE_VERSION
         value: "22"
+      # Optional. Leave unset and reset requests are still listed in Setup.
+      # Set them in the Dashboard; do not commit real addresses or passwords.
+      - key: RESET_REQUEST_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

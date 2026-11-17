@@ -21,7 +21,7 @@ writeFileSync(photo, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAA
 async function login(ctx: BrowserContext, page: Page, email: string) {
   await ctx.clearCookies();
   await page.goto("/login");
-  await page.fill("#email", email);
+  await page.fill("#login", email);
   await page.fill("#password", PASSWORD);
   await Promise.all([page.waitForURL((u) => !u.pathname.startsWith("/login")), page.click(".login-card button[type=submit]")]);
 }

@@ -16,8 +16,8 @@ async function main() {
       console.table(r.rows);
     } else if (cmd === "add" || cmd === "remove") {
       if (!email) throw new Error("Give the user's email.");
-      const u = (await db.query("SELECT id, name FROM ops.users WHERE lower(email) = lower($1)", [email])).rows[0];
-      if (!u) throw new Error("No user with that email. Create the user in the app first.");
+      const u = (await db.query("SELECT id, name FROM ops.users WHERE lower(email) = lower($1) OR lower(username) = lower($1)", [email])).rows[0];
+      if (!u) throw new Error("No user with that email or username. Create the user in the app first.");
       await db.query("BEGIN");
       if (cmd === "add") await db.query("INSERT INTO commercial.access_list (user_id, added_by, reason) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [u.id, by, reason]);
       else await db.query("DELETE FROM commercial.access_list WHERE user_id = $1", [u.id]);
