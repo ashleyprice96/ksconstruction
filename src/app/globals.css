@@ -742,7 +742,8 @@ dialog.confirm-dialog {
   color: var(--ink);
   background: rgba(12, 16, 28, 0.96);
 }
-dialog.confirm-dialog::backdrop { background: rgba(0, 0, 0, 0.62); }
+.pdf-frame { width: 100%; height: min(70vh, 720px); border: 0; border-radius: 8px; background: #fff; }
+.pdf-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 
 :focus-visible {
   outline: 3px solid var(--focus);

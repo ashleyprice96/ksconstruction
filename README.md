@@ -102,7 +102,16 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | No | Creates that administrator once, if the email does not exist. |
 | `ADMIN_NAMED_LIST` | No | `true` puts that administrator on the commercial named list. |
 | `PRIVATE_SEED_B64` | No | Base64 of `private/seed.private.json`. Loaded on boot. Remove it after it has loaded. Do not use the demo seed for real sites. |
-| `UPLOAD_DIR` | No | Defaults to `./uploads`. Work photos still go here. Render's disk is ephemeral, so those photos do not survive a restart until object storage is wired up. Scanned top sheets do not use this directory. |
+| `UPLOAD_DIR` | No | Defaults to `./uploads`. Work photos and signatures use this only when `STORAGE_DRIVER=postgres`. |
+| `HS_PDF_MAX_MB` | No | Largest health and safety, toolbox, or RAMS PDF. Defaults to 50. The database will not store more than 50 MB. Top sheets stay at 6 MB. |
+| `STORAGE_DRIVER` | No | `postgres` (default) or `s3`. |
+| `S3_ENDPOINT` | When `s3` | S3 API endpoint. For Cloudflare R2 this is `https://<accountid>.r2.cloudflarestorage.com`. |
+| `S3_BUCKET` | When `s3` | Private bucket name. Do not enable public access. |
+| `S3_ACCESS_KEY_ID` | When `s3` | Access key for that bucket. |
+| `S3_SECRET_ACCESS_KEY` | When `s3` | Secret for that access key. |
+| `S3_REGION` | When `s3` | `auto` for R2. A real region for AWS, such as `eu-west-2`. |
+| `STORAGE_QUOTA_GB` | No | Setup warns at 80% of this quota. When unset and the driver is postgres, the meter uses 1 GB. |
+| `ADMIN_EMAIL` | For `storage:migrate` | Must be an active administrator. |
 | `RESET_REQUEST_EMAIL` | No | Office inbox that receives password-reset requests. If this or `SMTP_HOST` is unset, the request is still recorded in Setup and no email is sent. |
 | `SMTP_HOST` | No | SMTP server. Leave unset to skip email. |
 | `SMTP_PORT` | No | Defaults to `587`. Port `465` uses TLS from the start. |
@@ -113,7 +122,29 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 ## Production notes
 
 - Host the app, database and file storage in a UK region. Swap `src/lib/files.ts` from local disk to private object storage for work photos.
-- Scanned top sheets are stored in Postgres (`ops.attachments.content`, bytea), because a free Render web service has no disk that survives a restart. Each page is limited to 6 MB and a claim holds at most 8 pages. JPG and PNG are compressed in the browser. Only the gang that owns the claim, and office or approver accounts, can open the file. Top sheets are left out of the client backup pack.
+- Scanned top sheets are stored in Postgres (`ops.attachments.content`, bytea) unless `STORAGE_DRIVER=s3`. Each page is limited to 6 MB and a claim holds at most 8 pages. JPG and PNG are compressed in the browser. Only the gang that owns the claim, and office or approver accounts, can open the file. Top sheets are left out of the client backup pack.
+- Health and safety alerts, toolbox talks, and site RAMS PDFs are limited to `HS_PDF_MAX_MB` (default 50). A free Render Postgres database is 1 GB, so about 20 to 40 large RAMS fit before you should move files to object storage. Setup shows how much is stored and warns at 80% of `STORAGE_QUOTA_GB`.
+
+### Cloudflare R2 for file storage
+
+The bucket stays private. The app checks who is logged in, then streams the file. It does not make the bucket public.
+
+1. In the Cloudflare dashboard, open R2 and create a bucket, for example `ks-claims-files`. Leave public access off.
+2. Under R2, open Manage API tokens and create a token that can read and write objects in that bucket only.
+3. Copy the S3 API endpoint. It looks like `https://<accountid>.r2.cloudflarestorage.com`.
+4. On the Render web service, set:
+   - `STORAGE_DRIVER` = `s3`
+   - `S3_ENDPOINT` = the endpoint from step 3
+   - `S3_BUCKET` = `ks-claims-files`
+   - `S3_ACCESS_KEY_ID` = the token access key
+   - `S3_SECRET_ACCESS_KEY` = the token secret
+   - `S3_REGION` = `auto`
+   - `STORAGE_QUOTA_GB` = the bucket size you are paying for, if you want the 80% warning
+   - `ADMIN_EMAIL` = an administrator already in the app
+5. Redeploy so the service starts with those variables.
+6. From a machine that has the same environment variables and `DATABASE_URL_OWNER`, run `npm run storage:migrate` once. It copies existing database bytes to the bucket, checks the size and the first bytes, then clears the database copy. Pass `--skip-signatures` to leave signature images on disk. The script refuses to run unless `ADMIN_EMAIL` is an active administrator.
+
+Backblaze B2 and AWS S3 use the same variables. Set `S3_ENDPOINT` to that service's S3 endpoint and `S3_REGION` to its region.
 - Set `SECURE_COOKIES=true` behind HTTPS. Use long random passwords for all three database logins and keep them in a password manager.
 - Back up the database and file store daily; test a restore. Backups contain commercial data, so limit who can reach them.
 - Transactional email (password resets, notifications) is not built yet.

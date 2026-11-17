@@ -6,6 +6,7 @@ import { gangMembers } from "@/lib/members";
 import { safeMessage, str } from "@/lib/forms";
 import { fmtDate } from "@/lib/dates";
 import SignaturePad from "@/components/SignaturePad";
+import PdfViewer, { OpenedGate, SignButton } from "@/components/PdfViewer";
 
 function clientIp(h: Headers): string {
   const fwd = h.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -20,6 +21,7 @@ async function confirm(f: FormData) {
     id,
     signatureName: str(f, `sign_${id}`),
     signaturePng: str(f, `signature_${id}`),
+    opened: f.get(`opened_${id}`) === "yes",
     attendeeIds: f.getAll(`attend_${id}`).map(String),
   }));
   try {
@@ -51,13 +53,14 @@ export default async function SafetyGate({ searchParams }: { searchParams: Promi
         <p className="lede">Confirm {alerts.length === 1 ? "this document" : "these documents"} before you can use Claims, {user.name.split(" ")[0]}.</p>
         {sp.error && <div className="alert error" role="alert">{sp.error}</div>}
         <form action={confirm} className="stack">
+          <OpenedGate pdfIds={alerts.filter((a) => a.attachment_mime === "application/pdf").map((a) => a.id)}>
           {alerts.map((a) => (
             <article key={a.id} className="panel">
               <p className="eyebrow">{a.kind === "toolbox" ? "Toolbox talk" : "H&S alert"}{a.sites ? ` · ${a.sites}` : " · All sites"}{a.due_on ? ` · Due ${fmtDate(a.due_on)}` : ""}</p>
               <h2 style={{ marginTop: 0 }}>{a.title}</h2>
               {a.body && <p style={{ whiteSpace: "pre-line" }}>{a.body}</p>}
               {a.attachment_mime === "application/pdf" && (
-                <iframe title={a.title} src={`/api/safety/${a.id}`} style={{ width: "100%", height: "70vh", border: 0, borderRadius: 8, background: "#fff" }} />
+                <PdfViewer id={a.id} src={`/api/safety/${a.id}`} pages={a.pdf_pages} title={a.title} />
               )}
               {a.attachment_mime?.startsWith("image/") && <img src={`/api/safety/${a.id}`} alt={a.attachment_name ?? a.title} style={{ width: "100%", height: "auto" }} />}
               <input type="hidden" name="alert_id" value={a.id} />
@@ -78,7 +81,8 @@ export default async function SafetyGate({ searchParams }: { searchParams: Promi
               </label>
             </article>
           ))}
-          <button className="btn" type="submit">Confirm</button>
+          <SignButton>Confirm</SignButton>
+          </OpenedGate>
         </form>
         <form action={signOut} style={{ marginTop: 16 }}><button className="btn ghost" type="submit">Sign out</button></form>
       </div>
