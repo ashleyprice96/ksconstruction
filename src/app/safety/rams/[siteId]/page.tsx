@@ -6,6 +6,7 @@ import { gangMembers } from "@/lib/members";
 import { SafetyError } from "@/lib/safety";
 import { safeMessage, str } from "@/lib/forms";
 import SignaturePad from "@/components/SignaturePad";
+import PdfViewer, { OpenedGate, SignButton } from "@/components/PdfViewer";
 
 function clientIp(h: Headers): string {
   const fwd = h.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -28,6 +29,7 @@ async function confirm(f: FormData) {
         attendeeIds: f.getAll(`attend_${id}`).map(String),
         ip: clientIp(h),
         userAgent: h.get("user-agent") ?? "",
+        opened: f.get(`opened_${id}`) === "yes",
       });
     }
   } catch (e) {
@@ -54,11 +56,12 @@ export default async function RamsGate({ params, searchParams }: { params: Promi
         <form action={confirm} className="stack">
           <input type="hidden" name="site_id" value={siteId} />
           <input type="hidden" name="next" value={sp.next ?? ""} />
+          <OpenedGate pdfIds={docs.map((doc) => doc.id)}>
           {docs.map((doc) => (
             <article key={doc.id} className="panel">
               <p className="eyebrow">Revision {doc.revision}</p>
               <h2 style={{ marginTop: 0 }}>{doc.title}</h2>
-              <iframe title={doc.title} src={`/api/rams/${doc.id}`} style={{ width: "100%", height: "70vh", border: 0, borderRadius: 8, background: "#fff" }} />
+              <PdfViewer id={doc.id} src={`/api/rams/${doc.id}`} pages={doc.pdf_pages} title={doc.title} />
               <input type="hidden" name="rams_id" value={doc.id} />
               <fieldset>
                 <legend>Who was briefed</legend>
@@ -71,7 +74,8 @@ export default async function RamsGate({ params, searchParams }: { params: Promi
               <label className="check"><input type="checkbox" name={`confirm_${doc.id}`} required /> I confirm I have read and understood this RAMS</label>
             </article>
           ))}
-          <button className="btn" type="submit">Confirm</button>
+          <SignButton>Confirm</SignButton>
+          </OpenedGate>
         </form>
       </div>
     </div>

@@ -2,9 +2,11 @@ import "server-only";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { storageDriver } from "./object-store";
+import { activeObjectStore } from "./storage-s3";
 
-// Local disk storage for development. Swap for private object storage (UK region)
-// in production; the rest of the app only uses saveFile and readStoredFile.
+// Disk storage for the postgres driver. When STORAGE_DRIVER=s3, bytes go to a
+// private bucket and the app reads them back after its own auth check.
 
 const root = () => resolve(/*turbopackIgnore: true*/ process.env.UPLOAD_DIR || "./uploads");
 
@@ -21,7 +23,19 @@ export function checkFile(f: File, allowPdf: boolean): string | null {
   return null;
 }
 
+export function objectKey(mime: string): string {
+  const ext = ALLOWED.get(mime) ?? "bin";
+  return `files/${new Date().toISOString().slice(0, 7)}/${randomUUID()}.${ext}`;
+}
+
 export async function saveFile(data: Buffer, mime: string): Promise<string> {
+  if (storageDriver() === "s3") {
+    const key = objectKey(mime);
+    const store = await activeObjectStore();
+    if (!store) throw new Error("S3 storage is not configured.");
+    await store.put(key, data, mime);
+    return key;
+  }
   const ext = ALLOWED.get(mime) ?? "bin";
   const key = `${new Date().toISOString().slice(0, 7)}/${randomUUID()}.${ext}`;
   await mkdir(join(/*turbopackIgnore: true*/ root(), key.slice(0, 7)), { recursive: true });
@@ -30,6 +44,12 @@ export async function saveFile(data: Buffer, mime: string): Promise<string> {
 }
 
 export async function readStoredFile(key: string): Promise<Buffer> {
+  if (key.startsWith("files/")) {
+    const store = await activeObjectStore();
+    const body = store ? await store.get(key) : null;
+    if (!body) throw new Error("missing object");
+    return body;
+  }
   if (!/^\d{4}-\d{2}\/[0-9a-f-]{36}\.[a-z]+$/.test(key)) throw new Error("bad key");
   return readFile(join(/*turbopackIgnore: true*/ root(), key));
 }

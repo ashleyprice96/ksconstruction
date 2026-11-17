@@ -3,6 +3,8 @@ import { q, q1 } from "./db";
 import type { User } from "./auth";
 import { checkFile, saveFile } from "./files";
 import { sha256, signaturePng } from "./sign-off";
+import { assertHsPdfSize, pdfPageCount } from "./hs-pdf";
+import { storageDriver } from "./object-store";
 
 export type SafetyKind = "alert" | "toolbox";
 
@@ -13,6 +15,7 @@ export interface SafetyAlert {
   body: string;
   attachment_name: string | null;
   attachment_mime: string | null;
+  pdf_pages: number | null;
   published_at: string;
   due_on: string | null;
   sites: string | null;
@@ -29,7 +32,7 @@ const TARGET = `(
 export async function pendingSafetyAlerts(user: User): Promise<SafetyAlert[]> {
   if (user.role !== "gang" || !user.gang_id) return [];
   return q<SafetyAlert>(
-    `SELECT a.id, a.kind, a.title, a.body, a.attachment_name, a.attachment_mime, a.published_at,
+    `SELECT a.id, a.kind, a.title, a.body, a.attachment_name, a.attachment_mime, a.pdf_pages, a.published_at,
             to_char(a.due_on, 'YYYY-MM-DD') AS due_on,
             (SELECT string_agg(si.name, ', ' ORDER BY si.name)
                FROM ops.hs_alert_sites s JOIN ops.sites si ON si.id = s.site_id
@@ -65,6 +68,7 @@ export interface SafetyConfirmation {
   id: string;
   signatureName: string;
   signaturePng: string;
+  opened: boolean;
   attendeeIds: string[];
 }
 
@@ -86,6 +90,7 @@ export async function confirmSafetyAlerts(user: User, items: SafetyConfirmation[
     let png: Buffer;
     try { png = signaturePng(item.signaturePng); }
     catch (e) { throw new SafetyError(e instanceof Error ? e.message : "Draw your signature."); }
+    if (alert.attachment_mime === "application/pdf" && !item.opened) throw new SafetyError("Open the PDF before you sign.");
     if (alert.kind === "toolbox" && item.attendeeIds.some((id) => !memberIds.has(id))) {
       throw new SafetyError("Attendance can only include people in your gang.");
     }
@@ -126,26 +131,29 @@ export async function publishSafetyAlert(user: User, input: {
   let name: string | null = null;
   let mime: string | null = null;
   let bytes: Buffer | null = null;
+  let pageCount: number | null = null;
+  let hashed = Buffer.from(body, "utf8");
   if (file) {
     if (input.kind === "toolbox" && file.type !== "application/pdf") throw new SafetyError("A toolbox talk file must be a PDF.");
-    const err = checkFile(file, true);
-    if (err) throw new SafetyError(err);
-    if (file.size > 6 * 1024 * 1024) throw new SafetyError("The PDF must be 6 MB or smaller.");
-    bytes = Buffer.from(await file.arrayBuffer());
     if (file.type === "application/pdf") {
-      key = null;
+      try { assertHsPdfSize(file.size); }
+      catch (e) { throw new SafetyError(e instanceof Error ? e.message : "The PDF is too large."); }
     } else {
-      key = await saveFile(bytes, file.type);
-      bytes = null;
+      const err = checkFile(file, true);
+      if (err) throw new SafetyError(err);
     }
+    const raw = Buffer.from(await file.arrayBuffer());
+    pageCount = file.type === "application/pdf" ? await pdfPageCount(raw).catch(() => null) : null;
+    hashed = file.type === "application/pdf" ? raw : hashed;
+    if (file.type === "application/pdf" && storageDriver() !== "s3") bytes = raw;
+    else key = await saveFile(raw, file.type);
     name = file.name.slice(0, 200);
     mime = file.type;
   }
-  const content = bytes ?? Buffer.from(body, "utf8");
   const row = await q1<{ id: string }>(
-    `INSERT INTO ops.hs_alerts (kind, title, body, active, due_on, revision, content_sha256, attachment_key, attachment_name, attachment_mime, attachment_bytes, published_by)
-     VALUES ($1, $2, $3, $4, $5, '1', $6, $7, $8, $9, $10, $11) RETURNING id`,
-    [input.kind, title.slice(0, 200), body.slice(0, 10000), input.active, input.dueOn || null, sha256(content), key, name, mime, bytes, user.id]);
+    `INSERT INTO ops.hs_alerts (kind, title, body, active, due_on, revision, content_sha256, pdf_pages, attachment_key, attachment_name, attachment_mime, attachment_bytes, published_by)
+     VALUES ($1, $2, $3, $4, $5, '1', $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+    [input.kind, title.slice(0, 200), body.slice(0, 10000), input.active, input.dueOn || null, sha256(hashed), pageCount, key, name, mime, bytes, user.id]);
   for (const siteId of [...new Set(input.siteIds)].filter((id) => /^[0-9a-f-]{36}$/.test(id))) {
     await q("INSERT INTO ops.hs_alert_sites (alert_id, site_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [row!.id, siteId]);
   }

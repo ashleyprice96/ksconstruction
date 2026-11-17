@@ -2,6 +2,9 @@ import "server-only";
 import { q, q1 } from "./db";
 import type { User } from "./auth";
 import { sha256, signaturePng } from "./sign-off";
+import { assertHsPdfSize, hsPdfMaxLabel, pdfPageCount } from "./hs-pdf";
+import { saveFile } from "./files";
+import { storageDriver } from "./object-store";
 import { SafetyError } from "./safety";
 
 export class RamsRequiredError extends SafetyError {
@@ -19,13 +22,14 @@ export interface SiteRams {
   revision: string;
   content_sha256: string;
   pdf_name: string;
+  pdf_pages: number | null;
 }
 
 /** Active RAMS for this site that this gang lead has not confirmed. */
 export async function pendingRams(user: User, siteId: string): Promise<SiteRams[]> {
   if (user.role !== "gang") return [];
   return q<SiteRams>(
-    `SELECT r.id, r.site_id, s.name AS site, r.title, r.revision, r.content_sha256, r.pdf_name
+    `SELECT r.id, r.site_id, s.name AS site, r.title, r.revision, r.content_sha256, r.pdf_name, r.pdf_pages
      FROM ops.site_rams r JOIN ops.sites s ON s.id = r.site_id
      WHERE r.site_id = $1 AND r.active AND NOT EXISTS (
        SELECT 1 FROM ops.rams_acknowledgements k WHERE k.rams_id = r.id AND k.user_id = $2)
@@ -39,7 +43,7 @@ export async function assertRamsCleared(user: User, siteId: string) {
 }
 
 export async function confirmRams(user: User, input: {
-  ramsId: string; signatureName: string; signaturePng: string; attendeeIds: string[]; ip: string; userAgent: string;
+  ramsId: string; signatureName: string; signaturePng: string; attendeeIds: string[]; ip: string; userAgent: string; opened: boolean;
 }) {
   if (user.role !== "gang" || !user.gang_id) throw new SafetyError("Only a gang lead confirms a RAMS.");
   const doc = await q1<{ id: string; revision: string; content_sha256: string; active: boolean }>(
@@ -47,6 +51,7 @@ export async function confirmRams(user: User, input: {
   if (!doc?.active) throw new SafetyError("That RAMS is not current.");
   const name = input.signatureName.trim().replace(/\s+/g, " ");
   if (name.length < 3) throw new SafetyError("Type your name to sign.");
+  if (!input.opened) throw new SafetyError("Open the PDF before you sign.");
   let png: Buffer;
   try { png = signaturePng(input.signaturePng); }
   catch (e) { throw new SafetyError(e instanceof Error ? e.message : "Draw your signature."); }
@@ -73,12 +78,17 @@ export async function publishRams(user: User, input: { siteId: string; title: st
   const revision = input.revision.trim();
   if (title.length < 3 || revision.length < 1) throw new SafetyError("Enter a title and a revision.");
   if (!input.file || input.file.size === 0 || input.file.type !== "application/pdf") throw new SafetyError("Upload the RAMS as a PDF.");
-  if (input.file.size > 6 * 1024 * 1024) throw new SafetyError("The PDF must be 6 MB or smaller.");
+  try { assertHsPdfSize(input.file.size); }
+  catch (e) { throw new SafetyError(e instanceof Error ? e.message : `The PDF must be ${hsPdfMaxLabel()} or smaller.`); }
   const bytes = Buffer.from(await input.file.arrayBuffer());
+  const pages = await pdfPageCount(bytes).catch(() => null);
+  const onS3 = storageDriver() === "s3";
+  const storageKey = onS3 ? await saveFile(bytes, "application/pdf") : null;
   await q(
-    `INSERT INTO ops.site_rams (site_id, title, revision, active, pdf_name, pdf_bytes, content_sha256, published_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [input.siteId, title.slice(0, 200), revision.slice(0, 40), input.active, input.file.name.slice(0, 200), bytes, sha256(bytes), user.id]);
+    `INSERT INTO ops.site_rams (site_id, title, revision, active, pdf_name, pdf_bytes, storage_key, pdf_pages, content_sha256, published_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [input.siteId, title.slice(0, 200), revision.slice(0, 40), input.active, input.file.name.slice(0, 200),
+      onS3 ? null : bytes, storageKey, pages, sha256(bytes), user.id]);
 }
 
 export interface RamsRoster {

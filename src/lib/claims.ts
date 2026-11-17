@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { q, q1, tx } from "./db";
 import type { User } from "./auth";
@@ -9,6 +10,7 @@ import { fromPence, lineValuePence, percentOfPence, rescale, toPence } from "./m
 import { resolveGangRate, resolveLiftValue } from "./rates";
 import { assertSafetyCleared } from "./safety";
 import { checkFile, saveFile } from "./files";
+import { storageDriver } from "./object-store";
 import { TOP_SHEET_MAX_PAGES, checkTopSheet, topSheetCount } from "./attachments";
 import { repriceMemberSplits, writeMemberSplits, MemberSplitError, type SplitRequest } from "./members";
 import { assertRamsCleared } from "./rams";
@@ -172,10 +174,12 @@ export async function addTopSheets(user: User, claimId: string, files: File[]) {
     const err = checkTopSheet(file);
     if (err) throw new ClaimError(err);
     const bytes = Buffer.from(await file.arrayBuffer());
+    const onS3 = storageDriver() === "s3";
+    const key = onS3 ? await saveFile(bytes, file.type) : `pg/${randomUUID()}`;
     const row = await q1<{ id: string }>(
       `INSERT INTO ops.attachments (claim_id, kind, storage_key, original_name, mime, size_bytes, uploaded_by, content)
-       VALUES ($1, 'top_sheet', 'pg/' || gen_random_uuid()::text, $2, $3, $4, $5, $6) RETURNING id`,
-      [claimId, file.name.slice(0, 200), file.type, bytes.length, user.id, bytes]);
+       VALUES ($1, 'top_sheet', $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [claimId, key, file.name.slice(0, 200), file.type, bytes.length, user.id, onS3 ? null : bytes]);
     await audit(user.id, "claim", claimId, "top_sheet_added", { attachment: row!.id, bytes: bytes.length });
   }
 }

@@ -10,6 +10,8 @@ import { changeLogin, createUser, importEligibility, resetPassword, setUserActiv
 import { publishSafetyAlert, safetyRoster, setSafetyAlertActive, SafetyError } from "@/lib/safety";
 import { publishRams, ramsRoster } from "@/lib/rams";
 import { deletedClaims, restoreClaim, ClaimError } from "@/lib/claims";
+import ProgressForm from "@/components/ProgressForm";
+import { formatBytes, storageUsage } from "@/lib/storage-usage";
 import { back, safeMessage, str } from "@/lib/forms";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { gbp } from "@/lib/money";
@@ -683,17 +685,23 @@ async function MarginTab({ actor }: { actor: User }) {
 }
 
 async function SafetyTab({ admin }: { admin: boolean }) {
-  const [alerts, rams, sites] = await Promise.all([
+  const [alerts, rams, sites, usage] = await Promise.all([
     safetyRoster(),
     ramsRoster(),
     q<{ id: string; name: string }>("SELECT id, name FROM ops.sites WHERE active ORDER BY name"),
+    storageUsage(),
   ]);
   return (
     <>
+      <div className={`alert ${usage.warning ? "warn" : "info"}`} data-testid="storage-meter">
+        Stored files: {usage.bytes ? formatBytes(usage.bytes) : "0 MB"} on {usage.driver === "s3" ? "S3" : "Postgres"}
+        {usage.quota ? ` of ${formatBytes(usage.quota)}` : ""}.
+        {usage.warning ? ` ${usage.warning}` : usage.driver === "postgres" ? " A free Render Postgres database is 1 GB, so about 20 to 40 large RAMS fit." : ""}
+      </div>
       <p className="small"><a href="/api/safety/export">Download alert and toolbox CSV</a> · <a href="/api/rams/export">Download RAMS CSV</a></p>
       {admin ? (
         <>
-          <form action={publishAlert} className="card stack">
+          <ProgressForm actionUrl="/api/safety/upload" button="Publish">
             <h2 style={{ marginTop: 0 }}>Publish an alert or toolbox talk</h2>
             <p className="small muted">Only an administrator publishes these. Gang leads cannot use the app until they confirm every active item aimed at them. A toolbox talk also records who attended.</p>
             <div className="row">
@@ -706,9 +714,8 @@ async function SafetyTab({ admin }: { admin: boolean }) {
             <div><label htmlFor="hs_sites">Sites (leave unselected for every site)</label>
               <select id="hs_sites" name="site_id" multiple size={4}>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
             <label className="check"><input type="checkbox" name="active" defaultChecked /> Active</label>
-            <button className="btn" type="submit">Publish</button>
-          </form>
-          <form action={publishRamsDoc} className="card stack">
+          </ProgressForm>
+          <ProgressForm actionUrl="/api/rams/upload" button="Publish RAMS">
             <h2 style={{ marginTop: 0 }}>Publish site RAMS</h2>
             <p className="small muted">A gang lead must read and sign the current RAMS, and tick who was briefed, before they can create or submit a claim on that site. A new revision has to be confirmed again.</p>
             <div className="row">
@@ -718,8 +725,7 @@ async function SafetyTab({ admin }: { admin: boolean }) {
             <div><label htmlFor="rams_title">Title</label><input id="rams_title" name="title" type="text" required maxLength={200} /></div>
             <div><label htmlFor="rams_pdf">PDF</label><input id="rams_pdf" name="pdf" type="file" accept="application/pdf" required /></div>
             <label className="check"><input type="checkbox" name="active" defaultChecked /> Active</label>
-            <button className="btn" type="submit">Publish RAMS</button>
-          </form>
+          </ProgressForm>
         </>
       ) : <p className="muted">Only an administrator can publish health and safety documents.</p>}
       <div data-testid="hs-ack-list">
