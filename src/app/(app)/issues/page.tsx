@@ -5,8 +5,10 @@ import { q } from "@/lib/db";
 import { canRaise, raiseIssue, IssueError } from "@/lib/issues";
 import { back, safeMessage, str } from "@/lib/forms";
 import { fmtDate } from "@/lib/dates";
+import { currentWeek } from "@/lib/settings";
 import Flash from "@/components/Flash";
 import ImageInput from "@/components/ImageInput";
+import ListToolbar, { SelectAll } from "@/components/ListToolbar";
 
 async function raise(f: FormData) {
   "use server";
@@ -33,6 +35,7 @@ export default async function Issues({ searchParams }: { searchParams: Promise<R
     `SELECT i.id, i.kind, i.title, i.priority, i.status, to_char(i.due_date, 'YYYY-MM-DD') AS due_date, s.name AS site, g.name AS gang, p.plot_number AS plot
      FROM ops.issues i JOIN ops.sites s ON s.id = i.site_id LEFT JOIN ops.gangs g ON g.id = i.gang_id LEFT JOIN ops.plots p ON p.id = i.plot_id
      WHERE ${where} ORDER BY (i.kind = 'safety') DESC, (i.priority = 'high') DESC, i.created_at DESC`, params);
+  const { today, weekStart, weekEnding } = await currentWeek();
   const raiser = canRaise(user);
   const [sites, gangs] = raiser ? await Promise.all([
     q<{ id: string; name: string }>("SELECT id, name FROM ops.sites WHERE active ORDER BY name"),
@@ -40,21 +43,42 @@ export default async function Issues({ searchParams }: { searchParams: Promise<R
   ]) : [[], []];
   return (
     <>
-      <div className="page-head"><div><div className="eyebrow">Site communication</div><h1>Snags</h1></div></div>
+      <div className="page-head"><div><div className="eyebrow">Site communication</div><h1>Issues</h1></div></div>
       <Flash sp={sp} />
-      <p className="small"><Link href={showClosed ? "/issues" : "/issues?closed=1"}>{showClosed ? "Hide closed" : "Show closed"}</Link></p>
-      <div className="table-wrap dense"><table>
-        <thead><tr><th>Issue</th><th>Site</th><th>Gang</th><th>Due</th><th>Status</th></tr></thead>
-        <tbody>
-          {rows.length === 0 && <tr><td colSpan={5} className="muted">Nothing open.</td></tr>}
-          {rows.map((r) => (
-            <tr key={r.id}><td><Link href={`/issues/${r.id}`}>{r.title}</Link><div>
-              <span className={`badge ${r.kind === "safety" ? "returned" : ""}`}>{r.kind === "safety" ? "Safety" : "Snag"}</span>{r.priority === "high" && <> <span className="badge awaiting_management">High</span></>}</div></td>
-              <td>{r.site}{r.plot ? <div className="small muted">Plot {r.plot}</div> : null}</td><td>{r.gang ?? ""}</td><td>{r.due_date ? fmtDate(r.due_date) : ""}</td>
-              <td><span className={`badge ${r.status}`}>{STATUS[r.status]}</span></td></tr>
-          ))}
-        </tbody>
-      </table></div>
+      <section className="panel">
+        <ListToolbar
+          tableId="issues-table"
+          showSite
+          gangs={[...new Set(rows.map((r) => r.gang).filter((g): g is string => !!g))].sort((a, b) => a.localeCompare(b, "en-GB"))}
+          sites={[...new Set(rows.map((r) => r.site))].sort((a, b) => a.localeCompare(b, "en-GB"))}
+          newClaim={user.role === "gang"}
+          statusNavigate={{
+            base: "/issues",
+            param: "closed",
+            value: showClosed ? "1" : "",
+            options: [{ value: "", label: "Open" }, { value: "1", label: "Including closed" }],
+          }}
+        />
+        <div className="table-wrap dense"><table id="issues-table" data-today={today} data-week-start={weekStart} data-week-end={weekEnding}>
+          <thead><tr>
+            <th className="check"><SelectAll tableId="issues-table" /></th>
+            <th>Issue</th><th>Site</th><th>Gang</th><th>Due</th><th>Status</th><th className="actions"> </th>
+          </tr></thead>
+          <tbody>
+            {rows.length === 0 && <tr data-empty="1"><td colSpan={7} className="muted">Nothing open.</td></tr>}
+            <tr data-filter-empty="1" hidden><td colSpan={7} className="muted">Nothing matches these filters.</td></tr>
+            {rows.map((r) => (
+              <tr key={r.id} data-status={r.status} data-gang={r.gang ?? ""} data-site={r.site} data-date={r.due_date ?? ""}>
+                <td className="check"><input className="row-check" type="checkbox" aria-label={`Select ${r.title}`} /></td>
+                <td><Link href={`/issues/${r.id}`}>{r.title}</Link><div>
+                  <span className={`badge ${r.kind === "safety" ? "returned" : ""}`}>{r.kind === "safety" ? "Safety" : "Snag"}</span>{r.priority === "high" && <> <span className="badge awaiting_management">High</span></>}</div></td>
+                <td>{r.site}{r.plot ? <div className="small muted">Plot {r.plot}</div> : null}</td><td>{r.gang ?? ""}</td><td>{r.due_date ? fmtDate(r.due_date) : ""}</td>
+                <td><span className={`badge ${r.status}`}>{STATUS[r.status]}</span></td>
+                <td className="actions"><Link className="btn ghost small" href={`/issues/${r.id}`}>View</Link></td></tr>
+            ))}
+          </tbody>
+        </table></div>
+      </section>
       {raiser && (
         <form action={raise} className="card stack" style={{ marginTop: 16 }}>
           <h2 style={{ marginTop: 0 }}>Raise a snag</h2>

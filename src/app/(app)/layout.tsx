@@ -2,8 +2,9 @@ import Link from "next/link";
 import { requireUser, logout } from "@/lib/auth";
 import { isNamedUser } from "@/lib/commercial";
 import { redirect } from "next/navigation";
-import MainNav from "@/components/MainNav";
-import ThemeToggle from "@/components/ThemeToggle";
+import { DesktopNav, MobileNav, type NavLink } from "@/components/MainNav";
+import Breadcrumbs from "@/components/Breadcrumbs";
+import HeaderSearch from "@/components/HeaderSearch";
 
 const ROLE_LABEL = { gang: "Gang", contracts_manager: "Contracts manager", management: "Management", admin: "Administrator" } as const;
 
@@ -13,17 +14,23 @@ async function signOut() {
   redirect("/login");
 }
 
+function initials(name: string) {
+  const parts = name.split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "KS";
+}
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const named = await isNamedUser(user);
   const mgr = user.role === "management" || user.role === "admin";
-  const links: { href: string; label: string; restricted?: boolean }[] = [
-    { href: "/", label: "Home" },
+  const links: NavLink[] = [
+    { href: "/", label: "Dashboard" },
     { href: "/claims", label: "Claims" },
-    { href: "/issues", label: "Snags" },
   ];
-  if (user.role === "gang") links.splice(2, 0, { href: "/payments/mine", label: "My payments" });
-  if (mgr) links.push({ href: "/payments", label: "Pay runs" }, { href: "/rates", label: "Gang rates" }, { href: "/setup", label: "Setup" });
+  if (user.role === "gang") links.push({ href: "/payments/mine", label: "Payments" });
+  if (mgr) links.push({ href: "/payments", label: "Payments" }, { href: "/rates", label: "Rates" });
+  links.push({ href: "/issues", label: "Issues" }, { href: "/notices", label: "Notices" });
+  if (mgr) links.push({ href: "/setup", label: "Setup" });
   if (named) links.push({ href: "/commercial", label: "Margin", restricted: true });
   return (
     <>
@@ -32,20 +39,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="topbar-inner">
           <Link href="/" className="brand">
             <img src="/ks-logo.png" alt="" width={40} height={40} />
-            <span><b>K-S</b><small>CLAIMS</small></span>
+            <span><b>K-S</b><small>Construction Group Ltd</small></span>
           </Link>
-          <div className="who">
-            <div className="who-id">
-              <span className="name">{user.name}</span>
-              <span className="role">{ROLE_LABEL[user.role]}</span>
+          <DesktopNav links={links} />
+          <div className="top-tools">
+            <HeaderSearch />
+            <div className="who">
+              <span className="avatar" aria-hidden="true">{initials(user.name)}</span>
+              <div className="who-id">
+                <span className="name">{user.name}</span>
+                <span className="role">{ROLE_LABEL[user.role]}</span>
+              </div>
+              <form action={signOut}><button className="btn ghost small" type="submit">Sign out</button></form>
             </div>
-            <ThemeToggle />
-            <form action={signOut}><button type="submit">Sign out</button></form>
           </div>
         </div>
-        <MainNav links={links} />
       </header>
+      <div className="crumb-bar"><div className="crumb-bar-inner"><Breadcrumbs /></div></div>
       <main id="content">{children}</main>
+      <MobileNav links={links} />
     </>
   );
 }
