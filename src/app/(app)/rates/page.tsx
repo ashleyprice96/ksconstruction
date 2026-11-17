@@ -64,7 +64,7 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
         return (
           <details key={s.id} className="card" open={sets.length <= 3}>
             <summary>{s.name} <span className="badge">{KIND[s.kind]}{s.client ? `: ${s.client}` : ""}</span></summary>
-            <div className="table-wrap" style={{ marginTop: 10 }}><table>
+            <div className="table-wrap dense" style={{ marginTop: 10 }}><table>
               <thead><tr><th>Item</th><th className="num">Current rate</th><th>Since</th><th>Scheduled changes</th></tr></thead>
               <tbody>{items.map((i) => {
                 const all = mine.filter((r) => r.item_id === i.id);
@@ -91,7 +91,7 @@ export default async function Rates({ searchParams }: { searchParams: Promise<Re
       })}
 
       <h2>Which rates each gang uses</h2>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Gang</th><th>Base set</th><th>Individual agreed set</th><th></th></tr></thead>
         <tbody>{gangs.map((g) => (
           <tr key={g.id}><td>{g.name}<div className="small muted">{g.ganger_name}</div></td>

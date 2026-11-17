@@ -29,7 +29,7 @@ export default async function PayRuns({ searchParams }: { searchParams: Promise<
     <>
       <div className="page-head"><div><div className="eyebrow">Payments</div><h1>Pay runs</h1></div><div className="actions"><Link className="btn secondary" href="/payments/backup">Client backup packs</Link></div></div>
       <Flash sp={sp} />
-      <div className="table-wrap">
+      <div className="table-wrap dense">
         <table>
           <thead><tr><th>Payment date</th><th>Week endings</th><th>Pay-less closes</th><th>Claims</th><th className="num">Approved gross</th><th>Status</th></tr></thead>
           <tbody>
@@ -40,7 +40,7 @@ export default async function PayRuns({ searchParams }: { searchParams: Promise<
                 <td>{fmtDateTime(r.payless_closes_at)}</td>
                 <td>{r.claims}{Number(r.awaiting) > 0 && <span className="muted small"> ({r.awaiting} awaiting)</span>}</td>
                 <td className="num">{gbp(r.total ?? 0)}</td>
-                <td><span className="badge">{r.status}</span></td>
+                <td><span className={`badge ${r.status}`}>{r.status}</span></td>
               </tr>
             ))}
           </tbody>

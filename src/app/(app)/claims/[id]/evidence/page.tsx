@@ -71,7 +71,7 @@ export default async function Evidence({ params, searchParams }: { params: Promi
                   <figure key={f.id}>
                     {f.mime.startsWith("image/") && f.mime !== "image/heic"
                       ? <img src={`/api/files/${f.id}`} alt={f.original_name} />
-                      : <div style={{ width: 120, height: 90, display: "grid", placeItems: "center", background: "#EEE", borderRadius: 6 }}>PDF</div>}
+                      : <div className="file-tile">PDF</div>}
                     <figcaption>{f.original_name}</figcaption>
                     <form action={remove}><input type="hidden" name="claim_id" value={id} /><input type="hidden" name="attachment_id" value={f.id} />
                       <button className="btn secondary small" type="submit">Remove</button></form>

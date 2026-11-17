@@ -32,10 +32,12 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Promi
         <div className="actions">{user.role === "gang" && <Link className="btn" href="/claims/new">New claim</Link>}</div>
       </div>
       <Flash sp={sp} />
-      <p className="small">
-        Filter: <Link href="/claims">All</Link>
-        {Object.entries(STATUS_LABEL).map(([k, v]) => <span key={k}> · <Link href={`/claims?status=${k}`}>{v}</Link></span>)}
-      </p>
+      <nav className="filters" aria-label="Filter claims">
+        <Link href="/claims" aria-current={status ? undefined : "page"}>All</Link>
+        {Object.entries(STATUS_LABEL).map(([k, v]) => (
+          <Link key={k} href={`/claims?status=${k}`} aria-current={status === k ? "page" : undefined}>{v}</Link>
+        ))}
+      </nav>
       <div className="table-wrap">
         <table>
           <thead><tr>
@@ -51,7 +53,7 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Promi
                 <td>{r.site}<br /><span className="muted small">{r.job}{r.plot ? ` · Plot ${r.plot}` : ""}</span></td>
                 <td>{TYPE_LABEL[r.claim_type]}</td>
                 <td>{r.week_ending ? fmtDate(r.week_ending) : <span className="muted small">Work {fmtDate(r.work_date)}</span>}</td>
-                <td><span className={`badge ${r.status}`}>{STATUS_LABEL[r.status]}</span>{mgr && Number(r.flags) > 0 && <> <span className="badge flag">{r.flags} flag{Number(r.flags) > 1 ? "s" : ""}</span></>}</td>
+                <td><span className={`badge ${r.status}${r.status === "awaiting_management" ? " submitted" : ""}`}>{STATUS_LABEL[r.status]}</span>{mgr && Number(r.flags) > 0 && <> <span className="badge flag flagged">{r.flags} flag{Number(r.flags) > 1 ? "s" : ""}</span></>}</td>
                 {mgr && <td className="num">{r.value ? gbp(r.value) : ""}</td>}
               </tr>
             ))}

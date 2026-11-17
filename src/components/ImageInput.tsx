@@ -62,16 +62,23 @@ export default function ImageInput({ name, label, hint, document = false, multip
   }
 
   return (
-    <div>
+    <div className="file-field">
       <label htmlFor={name}>{label}{hint && <span className="hint">{hint}</span>}</label>
-      <input ref={ref} id={name} name={name} type="file" accept={document ? "image/*,application/pdf" : "image/*"}
-        multiple={multiple} required={required} onChange={onChange} />
+      <div className="file-picker">
+        <input ref={ref} id={name} name={name} className="file-input" type="file" accept={document ? "image/*,application/pdf" : "image/*"}
+          multiple={multiple} required={required} onChange={onChange} />
+        <span className="file-picker-copy" aria-hidden="true">
+          <strong>{document ? "Photo, scan or PDF" : "Take a photo"}</strong>
+          <span>Camera or files. Photos are reduced on this phone before upload.</span>
+        </span>
+      </div>
       {document && (
-        <label className="small" style={{ fontWeight: 400, marginTop: 6 }}>
-          <input type="checkbox" checked={enhance} onChange={(e) => setEnhance(e.target.checked)} /> Enhance document (black and white, higher contrast)
+        <label className="check">
+          <input type="checkbox" checked={enhance} onChange={(e) => setEnhance(e.target.checked)} />
+          <span>Enhance document (black and white, higher contrast)</span>
         </label>
       )}
-      {status && <p className="small muted" aria-live="polite">{status}</p>}
+      {status && <p className="file-status" aria-live="polite">{status}</p>}
     </div>
   );
 }

@@ -43,7 +43,7 @@ export default async function Issues({ searchParams }: { searchParams: Promise<R
       <div className="page-head"><div><div className="eyebrow">Site communication</div><h1>Snags</h1></div></div>
       <Flash sp={sp} />
       <p className="small"><Link href={showClosed ? "/issues" : "/issues?closed=1"}>{showClosed ? "Hide closed" : "Show closed"}</Link></p>
-      <div className="table-wrap"><table>
+      <div className="table-wrap dense"><table>
         <thead><tr><th>Issue</th><th>Site</th><th>Gang</th><th>Due</th><th>Status</th></tr></thead>
         <tbody>
           {rows.length === 0 && <tr><td colSpan={5} className="muted">Nothing open.</td></tr>}
@@ -51,7 +51,7 @@ export default async function Issues({ searchParams }: { searchParams: Promise<R
             <tr key={r.id}><td><Link href={`/issues/${r.id}`}>{r.title}</Link><div>
               <span className={`badge ${r.kind === "safety" ? "returned" : ""}`}>{r.kind === "safety" ? "Safety" : "Snag"}</span>{r.priority === "high" && <> <span className="badge awaiting_management">High</span></>}</div></td>
               <td>{r.site}{r.plot ? <div className="small muted">Plot {r.plot}</div> : null}</td><td>{r.gang ?? ""}</td><td>{r.due_date ? fmtDate(r.due_date) : ""}</td>
-              <td><span className="badge">{STATUS[r.status]}</span></td></tr>
+              <td><span className={`badge ${r.status}`}>{STATUS[r.status]}</span></td></tr>
           ))}
         </tbody>
       </table></div>

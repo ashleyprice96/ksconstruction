@@ -35,7 +35,7 @@ export default async function Issue({ params, searchParams }: { params: Promise<
     <>
       <div className="page-head"><div><div className="eyebrow">{issue.kind === "safety" ? "Safety issue" : "Snag"} · {issue.priority} priority</div><h1>{issue.title}</h1>
         <p className="muted small">{issue.site}{issue.plot ? ` · Plot ${issue.plot}` : ""}{issue.gang ? ` · ${issue.gang}` : ""} · raised by {issue.raised_by} on {fmtDate(issue.created_at)}{issue.due_date ? ` · due ${fmtDate(issue.due_date)}` : ""}</p></div>
-        <div className="actions"><span className="badge">{STATUS[issue.status]}</span></div></div>
+        <div className="actions"><span className={`badge ${issue.status}`}>{STATUS[issue.status]}</span></div></div>
       <Flash sp={sp} />
       {issue.description && <div className="card">{issue.description}</div>}
       {photos.length > 0 && <div className="thumbs" style={{ marginBottom: 16 }}>{photos.map((p) => <figure key={p.id}><a href={`/api/files/${p.id}`} target="_blank" rel="noreferrer"><img src={`/api/files/${p.id}`} alt={p.original_name} /></a></figure>)}</div>}
