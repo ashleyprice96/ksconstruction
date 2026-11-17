@@ -47,8 +47,12 @@ async function upload(page: Page, kind: string) {
 async function newClaim(page: Page, type: string, plotIndex: number) {
   await page.goto("/claims/new");
   await page.selectOption("#type", type);
-  await page.selectOption("#job", (await page.locator("#job option", { hasText: "DEMO-001" }).first().getAttribute("value"))!);
-  await page.selectOption("#plot", (await page.locator('#plot optgroup[label*="DEMO-001"] option').nth(plotIndex).getAttribute("value"))!);
+  await page.selectOption("#site", { label: "Oak Lane (demo) · North · Northfield Contracting (demo)" });
+  await expect(page.locator("#job")).toBeEnabled();
+  await page.selectOption("#job", { label: "KS01 · Oak Lane (demo)" });
+  const plot = page.locator("#plot option:not([value=''])").nth(plotIndex);
+  await plot.waitFor({ state: "attached" });
+  await page.selectOption("#plot", (await plot.getAttribute("value"))!);
   await Promise.all([page.waitForURL(/quantities/), page.click("main button[type=submit]")]);
   return page.url().split("/claims/")[1].split("/")[0];
 }

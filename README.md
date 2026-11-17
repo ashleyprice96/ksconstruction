@@ -102,7 +102,7 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | No | Creates that administrator once, if the email does not exist. |
 | `ADMIN_NAMED_LIST` | No | `true` puts that administrator on the commercial named list. |
 | `PRIVATE_SEED_B64` | No | Base64 of `private/seed.private.json`. Loaded on boot. Remove it after it has loaded. Do not use the demo seed for real sites. |
-| `UPLOAD_DIR` | No | Defaults to `./uploads`. Render's disk is ephemeral, so uploaded photos do not survive a restart until object storage is wired up. |
+| `UPLOAD_DIR` | No | Defaults to `./uploads`. Work photos still go here. Render's disk is ephemeral, so those photos do not survive a restart until object storage is wired up. Scanned top sheets do not use this directory. |
 | `RESET_REQUEST_EMAIL` | No | Office inbox that receives password-reset requests. If this or `SMTP_HOST` is unset, the request is still recorded in Setup and no email is sent. |
 | `SMTP_HOST` | No | SMTP server. Leave unset to skip email. |
 | `SMTP_PORT` | No | Defaults to `587`. Port `465` uses TLS from the start. |
@@ -112,7 +112,8 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 
 ## Production notes
 
-- Host the app, database and file storage in a UK region. Swap `src/lib/files.ts` from local disk to private object storage.
+- Host the app, database and file storage in a UK region. Swap `src/lib/files.ts` from local disk to private object storage for work photos.
+- Scanned top sheets are stored in Postgres (`ops.attachments.content`, bytea), because a free Render web service has no disk that survives a restart. Each page is limited to 6 MB and a claim holds at most 8 pages. JPG and PNG are compressed in the browser. Only the gang that owns the claim, and office or approver accounts, can open the file. Top sheets are left out of the client backup pack.
 - Set `SECURE_COOKIES=true` behind HTTPS. Use long random passwords for all three database logins and keep them in a password manager.
 - Back up the database and file store daily; test a restore. Backups contain commercial data, so limit who can reach them.
 - Transactional email (password resets, notifications) is not built yet.

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentUser, login } from "@/lib/auth";
+import { gangMustAcknowledge } from "@/lib/safety";
 import { str } from "@/lib/forms";
 
 async function doLogin(f: FormData) {
@@ -13,6 +14,7 @@ async function doLogin(f: FormData) {
 export default async function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const user = await currentUser();
   if (user?.must_change_password) redirect("/account/password");
+  if (user && await gangMustAcknowledge(user)) redirect("/safety");
   if (user) redirect("/");
   const sp = await searchParams;
   return (

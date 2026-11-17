@@ -7,7 +7,9 @@ import { settings } from "./settings";
 import { weekEndingFor } from "./dates";
 import { fromPence, lineValuePence, percentOfPence, rescale, toPence } from "./money";
 import { resolveGangRate, resolveLiftValue } from "./rates";
+import { assertSafetyCleared } from "./safety";
 import { checkFile, saveFile } from "./files";
+import { TOP_SHEET_MAX_PAGES, checkTopSheet, topSheetCount } from "./attachments";
 
 export class ClaimError extends Error {}
 
@@ -42,6 +44,7 @@ function assertGangEditable(user: User, c: ClaimRow) {
 export async function createDraft(user: User, input: {
   siteId: string; jobNumberId: string; plotId: string | null; claimType: ClaimType; workDate: string; stage: string;
 }): Promise<string> {
+  await assertSafetyCleared(user);
   if (user.role !== "gang" || !user.gang_id) throw new ClaimError("Only gang accounts create claims.");
   const site = await q1<{ client_id: string | null; active: boolean }>("SELECT client_id, active FROM ops.sites WHERE id = $1", [input.siteId]);
   if (!site || !site.active) throw new ClaimError("Choose a site from the list.");
@@ -131,6 +134,32 @@ export async function addAttachment(user: User, claimId: string, kind: string, f
   await audit(user.id, "claim", claimId, "attachment_added", { kind, attachment: row!.id });
 }
 
+/** Paper or PDF top sheet. Bytes are stored in Postgres, not on the server disk. */
+export async function addTopSheets(user: User, claimId: string, files: File[]) {
+  const c = await loadClaim(user, claimId);
+  if (user.role === "gang") {
+    await assertSafetyCleared(user);
+    assertGangEditable(user, c);
+  } else if (user.role !== "management" && user.role !== "admin") {
+    throw new ClaimError("Only the gang or the office can add a top sheet.");
+  }
+  const pages = files.filter((f) => f && f.size > 0);
+  if (!pages.length) throw new ClaimError("Choose a page or a PDF.");
+  if (await topSheetCount(claimId) + pages.length > TOP_SHEET_MAX_PAGES) {
+    throw new ClaimError(`A claim can hold ${TOP_SHEET_MAX_PAGES} top sheet pages.`);
+  }
+  for (const file of pages) {
+    const err = checkTopSheet(file);
+    if (err) throw new ClaimError(err);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const row = await q1<{ id: string }>(
+      `INSERT INTO ops.attachments (claim_id, kind, storage_key, original_name, mime, size_bytes, uploaded_by, content)
+       VALUES ($1, 'top_sheet', 'pg/' || gen_random_uuid()::text, $2, $3, $4, $5, $6) RETURNING id`,
+      [claimId, file.name.slice(0, 200), file.type, bytes.length, user.id, bytes]);
+    await audit(user.id, "claim", claimId, "top_sheet_added", { attachment: row!.id, bytes: bytes.length });
+  }
+}
+
 export async function removeAttachment(user: User, claimId: string, attachmentId: string) {
   const c = await loadClaim(user, claimId);
   assertGangEditable(user, c);
@@ -181,12 +210,12 @@ export async function priceClaim(db: PoolClient, c: ClaimRow): Promise<{ lines: 
   for (const l of lines) {
     let rate: string | null = null; let source: string | null = null; let value: number | null = null; let problem: string | null = null;
     if (l.item_id) {
-      const r = await resolveGangRate(db, c.gang_id, c.client_id, l.item_id, c.work_date);
+      const r = await resolveGangRate(db, c.gang_id, c.site_id, l.item_id, c.work_date);
       if (r) { rate = r.rate; source = r.source; value = lineValuePence(l.quantity, r.rate); }
       else problem = `No agreed rate is set for ${l.description}. The office has been flagged.`;
     } else if (l.lift_id) {
-      const v = await resolveLiftValue(db, l.lift_id, c.work_date);
-      if (v) { rate = v; source = "Lift value"; value = percentOfPence(l.quantity, toPence(v)); }
+      const v = await resolveLiftValue(db, c.site_id, l.lift_id, c.work_date);
+      if (v) { rate = v.value; source = v.source; value = percentOfPence(l.quantity, toPence(v.value)); }
       else problem = `No value is set for ${l.description}. The office has been flagged.`;
     } else if (l.supervision_assignment_id) {
       const a = await db.query<{ weekly_amount: string }>("SELECT weekly_amount FROM ops.supervision_assignments WHERE id = $1", [l.supervision_assignment_id]);
@@ -217,6 +246,7 @@ export async function splitScreen(user: User, claimId: string) {
 // Submission: enforces everything Jordan checks by hand ------------------------------------
 
 export async function submitClaim(user: User, claimId: string, split: { payeeId: string; pence: number }[]) {
+  await assertSafetyCleared(user);
   const c = await loadClaim(user, claimId);
   assertGangEditable(user, c);
   const [minPhotos, sigRequired, cutoff] = await Promise.all([settings.minPhotos(), settings.signatureRequired(), settings.cutoff()]);

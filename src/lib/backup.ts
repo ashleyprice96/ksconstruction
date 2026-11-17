@@ -32,7 +32,7 @@ export async function packClaims(clientId: string, from: string, to: string): Pr
 async function attachmentsFor(claimIds: string[]) {
   if (!claimIds.length) return [];
   return q<{ id: string; claim_id: string; kind: string; storage_key: string; original_name: string; mime: string; size_bytes: number }>(
-    "SELECT id, claim_id, kind, storage_key, original_name, mime, size_bytes FROM ops.attachments WHERE claim_id = ANY($1::uuid[]) ORDER BY kind, uploaded_at", [claimIds]);
+    "SELECT id, claim_id, kind, storage_key, original_name, mime, size_bytes FROM ops.attachments WHERE claim_id = ANY($1::uuid[]) AND kind <> 'top_sheet' ORDER BY kind, uploaded_at", [claimIds]);
 }
 
 /** Greedy split of claims into parts that each stay under the size limit. */

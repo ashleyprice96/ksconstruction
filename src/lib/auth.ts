@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { q, q1 } from "./db";
+import { gangMustAcknowledge } from "./safety";
 
 export type Role = "gang" | "contracts_manager" | "management" | "admin";
 
@@ -58,11 +59,20 @@ export const currentUser = cache(async (): Promise<User | null> => {
      WHERE s.token_hash = $1 AND s.expires_at > now() AND u.active`, [hashToken(token)]);
 });
 
-/** Page guard: redirects to login, or shows a generic refusal for the wrong role. */
-export async function requireUser(roles?: Role[], opts?: { allowPasswordChange?: boolean }): Promise<User> {
+/** Password change is required before a health and safety confirmation. */
+export async function appAccess(user: User): Promise<"password" | "safety" | "ok"> {
+  if (user.must_change_password) return "password";
+  if (await gangMustAcknowledge(user)) return "safety";
+  return "ok";
+}
+
+/** Page guard. Password change comes before a health and safety confirmation. */
+export async function requireUser(roles?: Role[], opts?: { allowPasswordChange?: boolean; allowSafety?: boolean }): Promise<User> {
   const u = await currentUser();
   if (!u) redirect("/login");
-  if (u.must_change_password && !opts?.allowPasswordChange) redirect("/account/password");
+  const gate = await appAccess(u);
+  if (gate === "password" && !opts?.allowPasswordChange) redirect("/account/password");
+  if (gate === "safety" && !opts?.allowSafety) redirect("/safety");
   if (roles && !roles.includes(u.role)) redirect("/?denied=1");
   return u;
 }
