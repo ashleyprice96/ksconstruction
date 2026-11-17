@@ -1,10 +1,8 @@
 // Fictional demo data for development and testing. Every name and figure here is
 // made up and marked "demo". Real K-S sites, gangs and rates are NEVER put in this
 // file: they go in private/seed.private.json (git-ignored), loaded by seed-private.ts.
-import { Client } from "pg";
 import bcrypt from "bcryptjs";
-
-try { process.loadEnvFile(".env"); } catch { /* environment already set */ }
+import { enforceSharedOwnerRls, openOwner, relaxSharedOwnerRls, reportFailure } from "./script-db";
 
 export const DEMO_PASSWORD = "demo-password-1";
 
@@ -20,13 +18,13 @@ function nextFriday(from = new Date()): string {
 const plus = (iso: string, days: number) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
 
 async function main() {
-  const db = new Client({ connectionString: process.env.DATABASE_URL_OWNER });
-  await db.connect();
+  const db = await openOwner();
+  try {
+  await relaxSharedOwnerRls(db);
   const one = async (sql: string, p: unknown[] = []) => (await db.query(sql, p)).rows[0];
   const existing = await one("SELECT count(*)::int AS n FROM ops.users");
   if (existing.n > 0 && !process.argv.includes("--force")) {
     console.log("Database already has users; not seeding. Use --force on an empty database only.");
-    await db.end();
     return;
   }
   await db.query("BEGIN");
@@ -119,9 +117,12 @@ async function main() {
   await db.query("INSERT INTO ops.issues (kind, site_id, gang_id, title, description, priority, raised_by) VALUES ('safety', $1, $2, 'Keep scaffold access clear (demo)', 'Demo safety issue.', 'high', $3)", [siteA, gang1, admin]);
 
   await db.query("COMMIT");
-  await db.end();
   console.log(`Demo data loaded. Every demo login uses the password: ${DEMO_PASSWORD}`);
   console.log("Logins: admin@, director@ (named list), manager@ (not on list), cm@, gang1@, gang2@ ... all @demo.test");
+  } finally {
+    await enforceSharedOwnerRls(db);
+    await db.end();
+  }
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => reportFailure("seed-demo", e));

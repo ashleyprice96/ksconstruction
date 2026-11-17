@@ -1,5 +1,6 @@
 import "server-only";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { clientConfig, describeTarget, ownerConnectionString, readDbMode } from "./pg-config";
 
 // Numeric columns come back as strings; keep them as strings and convert explicitly.
 
@@ -15,7 +16,7 @@ declare global {
 export function loginUrl(kind: "app" | "commercial"): string | undefined {
   const explicit = kind === "app" ? process.env.DATABASE_URL_APP : process.env.DATABASE_URL_COMMERCIAL;
   if (explicit) return explicit;
-  const owner = process.env.DATABASE_URL_OWNER;
+  const owner = ownerConnectionString();
   const password = kind === "app" ? process.env.APP_DB_PASSWORD : process.env.COMMERCIAL_DB_PASSWORD;
   if (!owner || !password) return undefined;
   const u = new URL(owner);
@@ -24,13 +25,34 @@ export function loginUrl(kind: "app" | "commercial"): string | undefined {
   return u.toString();
 }
 
+function poolTarget(kind: "app" | "commercial"): { url: string; role?: string } {
+  const mode = readDbMode();
+  const owner = ownerConnectionString();
+  if (mode === "shared-owner") {
+    if (!owner) throw new Error("shared-owner mode needs DATABASE_URL_OWNER or DATABASE_URL.");
+    return { url: owner };
+  }
+  if (mode === "set-role") {
+    if (!owner) throw new Error("set-role mode needs DATABASE_URL_OWNER or DATABASE_URL.");
+    return { url: owner, role: kind === "app" ? "ks_app" : "ks_commercial" };
+  }
+  const url = loginUrl(kind);
+  if (!url) throw new Error(`No database URL for the ${kind} login. Set DATABASE_URL_${kind === "app" ? "APP" : "COMMERCIAL"}, or DATABASE_URL_OWNER with APP_DB_PASSWORD and COMMERCIAL_DB_PASSWORD.`);
+  return { url };
+}
+
 function pools() {
   if (!global.__ksPools) {
+    const mode = readDbMode();
+    const app = poolTarget("app");
+    const commercial = poolTarget("commercial");
+    console.log(`db: mode=${mode} app=${describeTarget(app.url)}${app.role ? ` role=${app.role}` : ""} commercial=${describeTarget(commercial.url)}${commercial.role ? ` role=${commercial.role}` : ""}`);
+    if (mode === "shared-owner") {
+      console.warn("db: shared-owner mode. Client rates rely on forced row-level security, not a separate login. The owner can turn row security off. Prefer a database user with CREATEROLE so bootstrap-roles can use mode=separate-login.");
+    }
     global.__ksPools = {
-      // Operational login: has no privileges on the commercial schema.
-      app: new Pool({ connectionString: loginUrl("app"), max: 10 }),
-      // Commercial login: only ever used from src/lib/commercial.ts.
-      commercial: new Pool({ connectionString: loginUrl("commercial"), max: 3 }),
+      app: new Pool({ ...clientConfig(app.url, app.role), max: 10 }),
+      commercial: new Pool({ ...clientConfig(commercial.url, commercial.role), max: 3 }),
     };
   }
   return global.__ksPools;

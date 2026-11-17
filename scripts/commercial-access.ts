@@ -4,14 +4,12 @@
 //   npm run commercial:access -- add someone@company.co.uk "Reason" "Changed by"
 //   npm run commercial:access -- remove someone@company.co.uk "Reason" "Changed by"
 //   npm run commercial:access -- log [days]
-import { Client } from "pg";
-
-try { process.loadEnvFile(".env"); } catch { /* environment already set */ }
+import { openOwner, reportFailure } from "./script-db";
 
 async function main() {
   const [cmd, email, reason = "", by = process.env.USER ?? "owner"] = process.argv.slice(2);
-  const db = new Client({ connectionString: process.env.DATABASE_URL_OWNER });
-  await db.connect();
+  const db = await openOwner();
+  await db.query("SET row_security = off");
   try {
     if (cmd === "list") {
       const r = await db.query(`SELECT u.name, u.email, u.role, a.added_at, a.added_by FROM commercial.access_list a JOIN ops.users u ON u.id = a.user_id ORDER BY u.name`);
@@ -39,4 +37,4 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error(e.message); process.exit(1); });
+main().catch((e) => reportFailure("commercial-access", e));

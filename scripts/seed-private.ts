@@ -2,11 +2,9 @@
 // The file holds commercially sensitive rates: never commit it, never use it for demos.
 // Safe to re-run: existing records are matched by name and left alone.
 import { readFileSync } from "node:fs";
-import { Client } from "pg";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
-
-try { process.loadEnvFile(".env"); } catch { /* environment already set */ }
+import { enforceSharedOwnerRls, openOwner, relaxSharedOwnerRls, reportFailure } from "./script-db";
 
 interface Seed {
   clients: { name: string; invoice_frequency_weeks?: number; uses_own_forms?: boolean }[];
@@ -21,8 +19,9 @@ interface Seed {
 async function main() {
   const path = process.argv[2] ?? "private/seed.private.json";
   const seed: Seed = JSON.parse(readFileSync(path, "utf8"));
-  const db = new Client({ connectionString: process.env.DATABASE_URL_OWNER });
-  await db.connect();
+  const db = await openOwner();
+  try {
+  await relaxSharedOwnerRls(db);
   const id = async (sql: string, p: unknown[]) => (await db.query(sql, p)).rows[0]?.id as string | undefined;
   await db.query("BEGIN");
   const clientId = new Map<string, string>();
@@ -86,9 +85,12 @@ async function main() {
     if (added.rowCount) await db.query("INSERT INTO commercial.access_list_history (user_id, action, changed_by, reason) VALUES ($1, 'added', 'seed-private', 'Named in the meeting brief')", [uid]);
   }
   await db.query("COMMIT");
-  await db.end();
   console.log(`Loaded: ${sites} sites, ${rates} gang rates, ${gangs} gangs.`);
   if (created.length) { console.log("New named-list users (set their login email and password in Setup, Users):"); created.forEach((c) => console.log("  " + c)); }
+  } finally {
+    await enforceSharedOwnerRls(db);
+    await db.end();
+  }
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => reportFailure("seed-private", e));

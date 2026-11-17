@@ -67,6 +67,43 @@ Real sites, gangs and rates are **never committed**. They go in `private/seed.pr
 
 K-S should own every account: the code repository (a private K-S GitHub organisation), hosting, database, file storage, email and domain, opened with a company email and card and with at least two K-S owners. Developers are invited as members and removed at the end. This code currently sits in a folder of another repository and should be moved into a K-S-owned repository; `git subtree split --prefix ks-claims` keeps its history.
 
+## Deploying on Render
+
+The web service start command is `npm run start:hosted`:
+
+```bash
+tsx scripts/bootstrap-roles.ts && tsx scripts/migrate.ts && tsx scripts/bootstrap-data.ts && tsx scripts/seed-demo.ts && next start -p ${PORT:-3000}
+```
+
+`render.yaml` describes a free web service and a Postgres 16 database in Frankfurt. If the database already exists, do not sync that file over it. Set the variables below on the web service.
+
+SSL is turned on for every host other than `localhost` / `127.0.0.1`, and also when the URL contains `sslmode=require`. Internal (`dpg-…-a`) and external (`*.render.com`) URLs both work. Certificate hostnames on the internal address do not match Render's certificate, so the certificate is encrypted but not verified unless the URL sets `sslmode=verify-full`.
+
+The database user Render creates is not a superuser. It does have `CREATEROLE`. `bootstrap-roles` then creates two logins:
+
+- `ks_app`, password `APP_DB_PASSWORD`. No privileges on the commercial schema.
+- `ks_commercial`, password `COMMERCIAL_DB_PASSWORD`. Reads and writes commercial data only through row-level security, and only for a user on the named list.
+
+The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). Passwords and full connection strings are never printed. If this user cannot create roles, the app connects as the owner. Once the database has users, row-level security is forced on the commercial tables, so a connection as the owner still has to pass the named-list check. That is weaker than separate logins: the owner can turn row security off. A restart is safe: roles are altered rather than recreated, migrations run once, and `seed-demo` does nothing once any user exists.
+
+`seed-demo` loads fictional data, including demo commercial figures. After the first boot of a real service, take `tsx scripts/seed-demo.ts` out of the start command before loading real sites and rates.
+
+### Env vars the web service needs
+
+| Variable | Required | What to set |
+|---|---|---|
+| `DATABASE_URL_OWNER` | Yes | Render Postgres connection string. Prefer the **internal** URL when the service and database are in the same region. The external URL works too. |
+| `DATABASE_URL` | Yes, if `DATABASE_URL_OWNER` is unset | Same connection string. Render fills this in when the database is linked. The scripts use `DATABASE_URL_OWNER` first. |
+| `APP_DB_PASSWORD` | Yes | Long random password for the `ks_app` login. |
+| `COMMERCIAL_DB_PASSWORD` | Yes | Long random password for the `ks_commercial` login. Different from the app password. |
+| `SECURE_COOKIES` | Yes in production | `true` |
+| `DATABASE_URL_APP` | No | Set only if you do not want the app URL derived from the owner URL and `APP_DB_PASSWORD`. |
+| `DATABASE_URL_COMMERCIAL` | No | Same, for the commercial login. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | No | Creates that administrator once, if the email does not exist. |
+| `ADMIN_NAMED_LIST` | No | `true` puts that administrator on the commercial named list. |
+| `PRIVATE_SEED_B64` | No | Base64 of `private/seed.private.json`. Loaded on boot. Remove it after it has loaded. Do not use the demo seed for real sites. |
+| `UPLOAD_DIR` | No | Defaults to `./uploads`. Render's disk is ephemeral, so uploaded photos do not survive a restart until object storage is wired up. |
+
 ## Production notes
 
 - Host the app, database and file storage in a UK region. Swap `src/lib/files.ts` from local disk to private object storage.

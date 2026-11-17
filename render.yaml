@@ -1,0 +1,38 @@
+# Fresh Render Blueprint for K-S Claims. If the Postgres instance already exists,
+# do not sync this file over it. Set the env vars on the web service instead.
+# The web service and the database must be in the same region so the internal
+# connection string works. Frankfurt matches the database this app was pointed at.
+databases:
+  - name: ks-claims-db
+    plan: basic-256mb
+    region: frankfurt
+    postgresMajorVersion: "16"
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: External URL. Prefer the internal connection string from the web service.
+
+services:
+  - type: web
+    name: ks-claims
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:hosted
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ks-claims-db
+          property: connectionString
+      - key: DATABASE_URL_OWNER
+        fromDatabase:
+          name: ks-claims-db
+          property: connectionString
+      - key: APP_DB_PASSWORD
+        generateValue: true
+      - key: COMMERCIAL_DB_PASSWORD
+        generateValue: true
+      - key: SECURE_COOKIES
+        value: "true"
+      - key: NODE_VERSION
+        value: "22"

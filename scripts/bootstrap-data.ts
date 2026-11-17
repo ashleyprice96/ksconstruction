@@ -3,18 +3,15 @@
 //    The administrator is also put on the named list when ADMIN_NAMED_LIST=true.
 //  - PRIVATE_SEED_B64: base64 of private/seed.private.json. Loaded if set (safe to repeat);
 //    remove the variable once loaded.
-import { Client } from "pg";
 import bcrypt from "bcryptjs";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-try { process.loadEnvFile(".env"); } catch { /* environment already set */ }
+import { openOwner, reportFailure } from "./script-db";
 
 async function main() {
-  const db = new Client({ connectionString: process.env.DATABASE_URL_OWNER });
-  await db.connect();
+  const db = await openOwner();
   const email = process.env.ADMIN_EMAIL?.toLowerCase().trim(), pw = process.env.ADMIN_PASSWORD;
   if (email && pw) {
     let id = (await db.query("SELECT id FROM ops.users WHERE lower(email) = $1", [email])).rows[0]?.id;
@@ -39,4 +36,4 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error("bootstrap-data failed:", e.message); process.exit(1); });
+main().catch((e) => reportFailure("bootstrap-data", e));

@@ -5,6 +5,8 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
+# Written at boot to tell the app which database login mode to use. Not a secret.
+.ks-db-mode.json
 # Uploaded photos, drawings and signatures: never committed.
 uploads/
 # Commercially sensitive seed data (real sites, rates): never committed.

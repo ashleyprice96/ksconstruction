@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "start:hosted": "tsx scripts/bootstrap-roles.ts && tsx scripts/migrate.ts && tsx scripts/bootstrap-data.ts && next start -p ${PORT:-3000}",
+    "start:hosted": "tsx scripts/bootstrap-roles.ts && tsx scripts/migrate.ts && tsx scripts/bootstrap-data.ts && tsx scripts/seed-demo.ts && next start -p ${PORT:-3000}",
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed-demo": "tsx scripts/seed-demo.ts",
