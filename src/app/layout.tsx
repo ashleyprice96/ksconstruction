@@ -1,19 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Barlow, Barlow_Condensed } from "next/font/google";
-import Script from "next/script";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const barlow = Barlow({
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-barlow",
-  display: "swap",
-});
-
-const barlowCondensed = Barlow_Condensed({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-barlow-condensed",
+  variable: "--font-inter",
   display: "swap",
 });
 
@@ -23,15 +14,17 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
 };
 
-export const viewport: Viewport = { themeColor: "#211F20", width: "device-width", initialScale: 1 };
-
-const themeBoot = `try{var t=localStorage.getItem("ks-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}`;
+export const viewport: Viewport = { themeColor: "#0B1020", width: "device-width", initialScale: 1 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-GB" className={`${barlow.variable} ${barlowCondensed.variable}`} suppressHydrationWarning>
+    <html lang="en-GB" className={inter.variable}>
       <body>
-        <Script id="ks-theme" strategy="beforeInteractive">{themeBoot}</Script>
+        <div className="atmosphere" aria-hidden="true">
+          <span className="orb orb-a" />
+          <span className="orb orb-b" />
+          <span className="orb orb-c" />
+        </div>
         {children}
       </body>
     </html>
