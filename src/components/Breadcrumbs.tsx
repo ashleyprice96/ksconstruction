@@ -20,10 +20,10 @@ const LABELS: Record<string, string> = {
   commercial: "Margin",
 };
 
-export default function Breadcrumbs() {
+export default function Breadcrumbs({ root = "Dashboard" }: { root?: string }) {
   const path = usePathname() || "/";
   const parts = path.split("/").filter(Boolean);
-  const crumbs = [{ href: "/", label: "Dashboard" }];
+  const crumbs = [{ href: "/", label: root }];
   let acc = "";
   for (const part of parts) {
     acc += `/${part}`;

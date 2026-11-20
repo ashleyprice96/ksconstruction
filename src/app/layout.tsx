@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { claimsEnabled, productName } from "@/lib/features";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -9,8 +10,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "K-S Claims",
-  description: "K-S subcontractor claims, approvals and payments",
+  title: productName(),
+  description: claimsEnabled() ? "K-S subcontractor claims, approvals and payments" : "K-S health and safety sign-off",
   manifest: "/manifest.webmanifest",
 };
 

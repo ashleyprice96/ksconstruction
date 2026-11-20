@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { currentUser, login } from "@/lib/auth";
 import { gangMustAcknowledge } from "@/lib/safety";
 import { str } from "@/lib/forms";
+import { productName } from "@/lib/features";
 
 async function doLogin(f: FormData) {
   "use server";
@@ -22,7 +23,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       <div className="login-card">
         <img src="/ks-logo.png" alt="" width={72} height={72} />
         <p className="eyebrow">K-S Construction Group</p>
-        <h1>Claims</h1>
+        <h1>{productName() === "K-S Claims" ? "Claims" : "Health and safety"}</h1>
         <p className="lede">Sign in with your email or username.</p>
         {sp.error && <div className="alert error" role="alert">Those details were not recognised.</div>}
         <form action={doLogin} className="stack">

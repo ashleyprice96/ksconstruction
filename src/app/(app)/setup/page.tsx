@@ -13,6 +13,7 @@ import { deletedClaims, restoreClaim, ClaimError } from "@/lib/claims";
 import ProgressForm from "@/components/ProgressForm";
 import { formatBytes, storageUsage } from "@/lib/storage-usage";
 import { back, safeMessage, str } from "@/lib/forms";
+import { claimsEnabled } from "@/lib/features";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { gbp } from "@/lib/money";
 import Flash from "@/components/Flash";
@@ -22,6 +23,9 @@ const P = "/setup";
 /** Runs a setup action: management only, errors shown generically unless known. */
 async function runAct(section: string, f: FormData, fn: (user: User) => Promise<string>) {
   const user = await requireUser(["management", "admin"]);
+  if (!claimsEnabled() && section !== "users" && section !== "safety") {
+    back(P, "error", "That section is not part of this release.");
+  }
   let msg = "";
   try { msg = await fn(user); }
   catch (e) {
@@ -308,8 +312,8 @@ async function publishAlert(f: FormData) {
       file: file instanceof File ? file : null,
     });
     return kind === "toolbox"
-      ? "Toolbox talk published. Gang leads must open it and confirm before they can continue."
-      : "Health and safety alert published. Gang leads must confirm it before they can continue.";
+      ? "Toolbox talk published. Everyone with a login must open it and sign before they can continue."
+      : "Health and safety alert published. Everyone with a login must sign it before they can continue.";
   });
 }
 async function publishRamsDoc(f: FormData) {
@@ -323,7 +327,7 @@ async function publishRamsDoc(f: FormData) {
       active: f.get("active") === "on",
       file: file instanceof File ? file : new File([], ""),
     });
-    return "RAMS published. Gang leads must confirm this revision before they claim on that site.";
+    return "RAMS published. Gang leads must sign this revision for the site.";
   });
 }
 async function restoreDeleted(f: FormData) {
@@ -347,9 +351,12 @@ const TABS = { sites: "Sites and plots", gangs: "Gangs and payees", users: "User
 export default async function Setup({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const user = await requireUser(["management", "admin"]);
   const sp = await searchParams;
-  const namedAdmin = user.role === "admin" && await isNamedUser(user);
-  const tabs = (Object.entries(TABS) as [keyof typeof TABS, string][]).filter(([k]) => k !== "margin" || namedAdmin);
-  const s = (tabs.some(([k]) => k === sp.s) ? sp.s : "sites") as keyof typeof TABS;
+  const namedAdmin = claimsEnabled() && user.role === "admin" && await isNamedUser(user);
+  const tabs = (Object.entries(TABS) as [keyof typeof TABS, string][]).filter(([k]) => {
+    if (!claimsEnabled() && k !== "users" && k !== "safety") return false;
+    return k !== "margin" || namedAdmin;
+  });
+  const s = (tabs.some(([k]) => k === sp.s) ? sp.s : claimsEnabled() ? "sites" : "safety") as keyof typeof TABS;
   const pending = await q1count();
   return (
     <>
@@ -703,7 +710,7 @@ async function SafetyTab({ admin }: { admin: boolean }) {
         <>
           <ProgressForm actionUrl="/api/safety/upload" button="Publish">
             <h2 style={{ marginTop: 0 }}>Publish an alert or toolbox talk</h2>
-            <p className="small muted">Only an administrator publishes these. Gang leads cannot use the app until they confirm every active item aimed at them. A toolbox talk also records who attended.</p>
+            <p className="small muted">Only an administrator publishes these. Everyone with a login must sign each active alert and toolbox talk. Gang leads also record who attended a talk, and who was briefed on a site RAMS.</p>
             <div className="row">
               <div><label htmlFor="hs_kind">Type</label><select id="hs_kind" name="kind"><option value="alert">H&amp;S alert</option><option value="toolbox">Toolbox talk</option></select></div>
               <div><label htmlFor="hs_due">Due date (optional)</label><input id="hs_due" name="due_on" type="date" /></div>
@@ -717,7 +724,9 @@ async function SafetyTab({ admin }: { admin: boolean }) {
           </ProgressForm>
           <ProgressForm actionUrl="/api/rams/upload" button="Publish RAMS">
             <h2 style={{ marginTop: 0 }}>Publish site RAMS</h2>
-            <p className="small muted">A gang lead must read and sign the current RAMS, and tick who was briefed, before they can create or submit a claim on that site. A new revision has to be confirmed again.</p>
+            <p className="small muted">{claimsEnabled()
+              ? "A gang lead must read and sign the current RAMS, and tick who was briefed, before they can create or submit a claim on that site. A new revision has to be confirmed again."
+              : "A gang lead opens any site, reads the current RAMS, signs it, and ticks who was briefed. A new revision has to be signed again."}</p>
             <div className="row">
               <div><label htmlFor="rams_site">Site</label><select id="rams_site" name="site_id" required><option value="">Choose a site</option>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
               <div><label htmlFor="rams_rev">Revision</label><input id="rams_rev" name="revision" type="text" required maxLength={40} placeholder="For example, 2" /></div>
@@ -742,7 +751,7 @@ async function SafetyTab({ admin }: { admin: boolean }) {
             <p className="small"><a href={`/api/safety/${a.id}/record`}>Signed record (PDF)</a></p>
             <div className="table-wrap dense">
               <table>
-                <thead><tr><th>Gang lead</th><th>Confirmed</th><th>When</th><th>Signature</th><th>Attendees</th></tr></thead>
+                <thead><tr><th>Person</th><th>Confirmed</th><th>When</th><th>Signature</th><th>Attendees</th></tr></thead>
                 <tbody>
                   {a.people.map((p) => (
                     <tr key={p.user_id}>
