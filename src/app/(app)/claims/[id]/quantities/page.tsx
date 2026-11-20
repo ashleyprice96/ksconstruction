@@ -14,7 +14,7 @@ const WALL_ROWS = 8;
 
 async function save(f: FormData) {
   "use server";
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const id = str(f, "claim_id");
   const items: { itemId: string; quantity: number }[] = [];
   const lifts: { liftId: string; percent: number }[] = [];
@@ -43,7 +43,7 @@ async function save(f: FormData) {
 }
 
 export default async function Quantities({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const { id } = await params;
   const sp = await searchParams;
   const c = await loadClaim(user, id).catch(() => null);
@@ -73,7 +73,7 @@ export default async function Quantities({ params, searchParams }: { params: Pro
          WHERE a.site_id = $1 AND p.gang_id = $2 AND a.start_date <= $3 AND (a.end_date IS NULL OR a.end_date >= $3)`,
         [c.site_id, c.gang_id, c.work_date])
     : [];
-  const card = user.gang_id ? await gangRateCard(user.gang_id, c.work_date) : [];
+  const card = c.gang_id ? await gangRateCard(c.gang_id, c.work_date) : [];
   const itemRate = (itemId: string) => card.find((r) => r.site_id === c.site_id && r.item_id === itemId);
 
   return (
