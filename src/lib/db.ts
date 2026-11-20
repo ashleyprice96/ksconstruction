@@ -50,9 +50,13 @@ function pools() {
     if (mode === "shared-owner") {
       console.warn("db: shared-owner mode. Client rates rely on forced row-level security, not a separate login. The owner can turn row security off. Prefer a database user with CREATEROLE so bootstrap-roles can use mode=separate-login.");
     }
+    const serverless = process.env.VERCEL === "1";
+    const limits = serverless
+      ? { idleTimeoutMillis: 10_000, connectionTimeoutMillis: 10_000, allowExitOnIdle: true }
+      : {};
     global.__ksPools = {
-      app: new Pool({ ...clientConfig(app.url, app.role), max: 10 }),
-      commercial: new Pool({ ...clientConfig(commercial.url, commercial.role), max: 3 }),
+      app: new Pool({ ...clientConfig(app.url, app.role), max: serverless ? 4 : 10, ...limits }),
+      commercial: new Pool({ ...clientConfig(commercial.url, commercial.role), max: 3, ...limits }),
     };
   }
   return global.__ksPools;

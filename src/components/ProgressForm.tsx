@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { uploadPrivateBlob, type BlobPurpose } from "@/lib/blob-client";
 
 /** Posts a Setup form and shows how much of the file has left the browser. */
-export default function ProgressForm({ actionUrl, children, button }: { actionUrl: string; children: React.ReactNode; button: string }) {
+export default function ProgressForm({ actionUrl, children, button, blobPurpose }: { actionUrl: string; children: React.ReactNode; button: string; blobPurpose?: BlobPurpose }) {
   const [pct, setPct] = useState<number | null>(null);
   const [error, setError] = useState("");
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     setPct(0);
+    const form = e.currentTarget;
     const xhr = new XMLHttpRequest();
     xhr.open("POST", actionUrl);
     xhr.upload.onprogress = (ev) => {
@@ -30,7 +32,24 @@ export default function ProgressForm({ actionUrl, children, button }: { actionUr
       window.location.href = `/setup?s=safety&ok=${encodeURIComponent(message)}`;
     };
     xhr.onerror = () => { setError("Upload failed."); setPct(null); };
-    xhr.send(new FormData(e.currentTarget));
+    const data = new FormData(form);
+    const fileInput = form.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const file = fileInput?.files?.[0];
+    if (blobPurpose && file && file.size > 0) {
+      try {
+        const uploaded = await uploadPrivateBlob(file, blobPurpose, setPct);
+        data.delete(fileInput!.name);
+        data.set("blob_pathname", uploaded.pathname);
+        data.set("blob_name", uploaded.name);
+        data.set("blob_type", uploaded.contentType);
+        data.set("blob_sha", uploaded.sha256);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Upload failed.");
+        setPct(null);
+        return;
+      }
+    }
+    xhr.send(data);
   }
 
   return (

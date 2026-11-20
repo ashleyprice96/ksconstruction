@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser, isManager } from "@/lib/auth";
 import { q, q1 } from "@/lib/db";
-import { approveClaim, assignPayRun, addTopSheets, claimEditLock, deleteBlockReason, deleteClaim, loadClaim, reduceLine, returnClaim, ClaimError } from "@/lib/claims";
+import { approveClaim, assignPayRun, addTopSheets, blobPages, claimEditLock, deleteBlockReason, deleteClaim, loadClaim, reduceLine, returnClaim, ClaimError } from "@/lib/claims";
 import { gangMembers, memberSplitsFor, updateMemberSplit, MemberSplitError, type SplitRequest } from "@/lib/members";
 import { claimContext, STATUS_LABEL, TYPE_LABEL } from "@/lib/lookups";
 import { back, safeMessage, str } from "@/lib/forms";
@@ -11,6 +11,7 @@ import { gbp, gbpRate, toPence } from "@/lib/money";
 import { settings } from "@/lib/settings";
 import ClaimSummary from "@/components/ClaimSummary";
 import TopSheetScanner from "@/components/TopSheetScanner";
+import { storageDriver } from "@/lib/object-store";
 import SplitForm from "@/components/SplitForm";
 import DeleteClaimDialog from "@/components/DeleteClaimDialog";
 import { claimFieldEdits, officeSetQuantity, officeUpdateDetails, unapproveClaim } from "@/lib/office-edit";
@@ -46,7 +47,8 @@ async function saveTopSheet(f: FormData) {
   const user = await requireUser(["management", "admin"]);
   const id = str(f, "claim_id");
   const files = f.getAll("pages").filter((x): x is File => x instanceof File && x.size > 0);
-  try { await addTopSheets(user, id, files); }
+  const blobs = blobPages(f);
+  try { await addTopSheets(user, id, files, blobs); }
   catch (e) { back(`/claims/${id}`, "error", safeMessage(e, [ClaimError])); }
   back(`/claims/${id}`, "ok", "Top sheet saved.");
 }
@@ -190,7 +192,7 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
             ))}
           </div>
         )}
-        {mgr && !editLock && <TopSheetScanner action={saveTopSheet} claimId={id} />}
+        {mgr && !editLock && <TopSheetScanner action={saveTopSheet} claimId={id} useBlob={storageDriver() === "vercel-blob"} />}
       </div>
 
       <h2>Work and evidence</h2>

@@ -72,23 +72,29 @@ export async function confirmRams(user: User, input: {
   }
 }
 
-export async function publishRams(user: User, input: { siteId: string; title: string; revision: string; active: boolean; file: File }) {
+export async function publishRams(user: User, input: {
+  siteId: string; title: string; revision: string; active: boolean; file: File | null;
+  prepared?: { name: string; bytes: Buffer; key: string | null } | null;
+}) {
   if (user.role !== "admin") throw new SafetyError("Only an administrator can publish a RAMS.");
   const title = input.title.trim();
   const revision = input.revision.trim();
   if (title.length < 3 || revision.length < 1) throw new SafetyError("Enter a title and a revision.");
-  if (!input.file || input.file.size === 0 || input.file.type !== "application/pdf") throw new SafetyError("Upload the RAMS as a PDF.");
-  try { assertHsPdfSize(input.file.size); }
+  const prepared = input.prepared ?? null;
+  const file = !prepared ? input.file : null;
+  if (!prepared && (!file || file.size === 0 || file.type !== "application/pdf")) throw new SafetyError("Upload the RAMS as a PDF.");
+  const bytes = prepared ? prepared.bytes : Buffer.from(await file!.arrayBuffer());
+  const filename = prepared ? prepared.name : file!.name;
+  try { assertHsPdfSize(bytes.length); }
   catch (e) { throw new SafetyError(e instanceof Error ? e.message : `The PDF must be ${hsPdfMaxLabel()} or smaller.`); }
-  const bytes = Buffer.from(await input.file.arrayBuffer());
   const pages = await pdfPageCount(bytes).catch(() => null);
-  const onS3 = storageDriver() === "s3";
-  const storageKey = onS3 ? await saveFile(bytes, "application/pdf") : null;
+  const external = storageDriver() !== "postgres";
+  const storageKey = prepared?.key ? prepared.key : external ? await saveFile(bytes, "application/pdf") : null;
   await q(
     `INSERT INTO ops.site_rams (site_id, title, revision, active, pdf_name, pdf_bytes, storage_key, pdf_pages, content_sha256, published_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [input.siteId, title.slice(0, 200), revision.slice(0, 40), input.active, input.file.name.slice(0, 200),
-      onS3 ? null : bytes, storageKey, pages, sha256(bytes), user.id]);
+    [input.siteId, title.slice(0, 200), revision.slice(0, 40), input.active, filename.slice(0, 200),
+      storageKey ? null : bytes, storageKey, pages, sha256(bytes), user.id]);
 }
 
 export interface RamsRoster {

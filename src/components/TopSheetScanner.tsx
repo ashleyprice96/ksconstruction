@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { uploadPrivateBlob } from "@/lib/blob-client";
 
 const MAX_BYTES = 6 * 1024 * 1024;
 
@@ -11,7 +12,7 @@ type Page = { name: string; url: string; file: File };
  * shots are extra pages. JPG and PNG are cropped to the page and compressed
  * in the browser. No document is sent to an outside service.
  */
-export default function TopSheetScanner({ action, claimId }: { action: (f: FormData) => void; claimId: string }) {
+export default function TopSheetScanner({ action, claimId, useBlob = false }: { action: (f: FormData) => void; claimId: string; useBlob?: boolean }) {
   const held = useRef<HTMLInputElement>(null);
   const [pages, setPages] = useState<Page[]>([]);
   const [enhance, setEnhance] = useState(true);
@@ -117,8 +118,29 @@ export default function TopSheetScanner({ action, claimId }: { action: (f: FormD
     remember(pages.filter((_, i) => i !== index));
   }
 
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    if (!useBlob) return;
+    e.preventDefault();
+    setStatus("Uploading...");
+    const data = new FormData();
+    data.set("claim_id", claimId);
+    try {
+      for (const page of pages) {
+        const uploaded = await uploadPrivateBlob(page.file, "topsheet");
+        data.append("blob_pathname", uploaded.pathname);
+        data.append("blob_name", uploaded.name);
+        data.append("blob_type", uploaded.contentType);
+        data.append("blob_sha", uploaded.sha256);
+      }
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Upload failed.");
+      return;
+    }
+    action(data);
+  }
+
   return (
-    <form action={action} className="stack" data-testid="top-sheet-scanner">
+    <form action={useBlob ? undefined : action} onSubmit={useBlob ? onSubmit : undefined} className="stack" data-testid="top-sheet-scanner">
       <input type="hidden" name="claim_id" value={claimId} />
       <input ref={held} name="pages" type="file" className="sr-only" tabIndex={-1} multiple />
       <div className="row">

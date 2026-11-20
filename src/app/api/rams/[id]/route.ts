@@ -1,7 +1,6 @@
 import { currentUser } from "@/lib/auth";
 import { q1 } from "@/lib/db";
-import { readStoredFile } from "@/lib/files";
-import { activeObjectStore } from "@/lib/storage-s3";
+import { isRemoteKey, remoteStore } from "@/lib/remote-file";
 import { pdfStreamResponse, readByteaSlice } from "@/lib/pdf-stream";
 
 /** Streams a RAMS PDF. Auth is checked here; the bucket stays private. */
@@ -15,17 +14,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!meta) return new Response("Not found", { status: 404 });
   if (user.role === "gang" && !meta.active) return new Response("Not found", { status: 404 });
   let length = meta.n ?? 0;
-  if (meta.storage_key) {
-    const store = await activeObjectStore();
-    length = (await store?.head(meta.storage_key)) ?? 0;
-  }
+  if (isRemoteKey(meta.storage_key)) length = (await remoteStore(meta.storage_key).head(meta.storage_key)) ?? 0;
   if (!length) return new Response("Not found", { status: 404 });
   const key = meta.storage_key;
   return pdfStreamResponse(req, { length, name: meta.pdf_name }, async (start, end) => {
-    if (key) {
-      const store = await activeObjectStore();
-      return (await store?.get(key, { start, end })) ?? Buffer.alloc(0);
-    }
+    if (isRemoteKey(key)) return (await remoteStore(key).get(key, { start, end })) ?? Buffer.alloc(0);
     return readByteaSlice("ops.site_rams", "pdf_bytes", id, start, end);
   });
 }
