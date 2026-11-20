@@ -2,6 +2,7 @@ import Link from "next/link";
 import { currentUser, logout } from "@/lib/auth";
 import { gangMustAcknowledge } from "@/lib/safety";
 import { isNamedUser } from "@/lib/commercial";
+import { claimsEnabled } from "@/lib/features";
 import { redirect } from "next/navigation";
 import { DesktopNav, MobileNav, type NavLink } from "@/components/MainNav";
 import Breadcrumbs from "@/components/Breadcrumbs";
@@ -25,15 +26,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect("/login");
   if (user.must_change_password) redirect("/account/password");
   if (await gangMustAcknowledge(user)) redirect("/safety");
-  const named = await isNamedUser(user);
+  const claims = claimsEnabled();
+  const named = claims ? await isNamedUser(user) : false;
   const mgr = user.role === "management" || user.role === "admin";
-  const links: NavLink[] = [
-    { href: "/", label: "Dashboard" },
-    { href: "/claims", label: "Claims" },
-  ];
-  if (user.role === "gang") links.push({ href: "/payments/mine", label: "Payments" });
-  if (mgr) links.push({ href: "/payments", label: "Payments" }, { href: "/rates", label: "Rates" });
-  links.push({ href: "/issues", label: "Issues" }, { href: "/notices", label: "Notices" });
+  const links: NavLink[] = claims
+    ? [
+        { href: "/", label: "Dashboard" },
+        { href: "/claims", label: "Claims" },
+      ]
+    : [{ href: "/", label: "Home" }];
+  if (claims && user.role === "gang") links.push({ href: "/payments/mine", label: "Payments" });
+  if (claims && mgr) links.push({ href: "/payments", label: "Payments" }, { href: "/rates", label: "Rates" });
+  if (claims) links.push({ href: "/issues", label: "Issues" }, { href: "/notices", label: "Notices" });
   if (mgr) links.push({ href: "/setup", label: "Setup" });
   if (named) links.push({ href: "/commercial", label: "Margin", restricted: true });
   return (
@@ -43,7 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="topbar-inner">
           <Link href="/" className="brand">
             <img src="/ks-logo.png" alt="" width={40} height={40} />
-            <span><b>K-S</b><small>Construction Group Ltd</small></span>
+            <span><b>K-S</b><small>{claims ? "Construction Group Ltd" : "Health and safety"}</small></span>
           </Link>
           <DesktopNav links={links} />
           <div className="top-tools">
@@ -59,7 +63,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <div className="crumb-bar"><div className="crumb-bar-inner"><Breadcrumbs /></div></div>
+      <div className="crumb-bar"><div className="crumb-bar-inner"><Breadcrumbs root={claims ? "Dashboard" : "Home"} /></div></div>
       <main id="content">{children}</main>
       <MobileNav links={links} />
     </>

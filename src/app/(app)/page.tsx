@@ -8,6 +8,8 @@ import { STATUS_LABEL } from "@/lib/lookups";
 import Flash from "@/components/Flash";
 import AreaChart from "@/components/AreaChart";
 import ListToolbar, { SelectAll } from "@/components/ListToolbar";
+import { claimsEnabled } from "@/lib/features";
+import HsHome from "./hs-home";
 
 function longDate(iso: string) {
   return new Date(iso + "T12:00:00Z").toLocaleDateString("en-GB", {
@@ -28,6 +30,7 @@ function seriesWeeks(end: string, count: number, values: Map<string, number>) {
 }
 
 export default async function Home({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
+  if (!claimsEnabled()) return <HsHome searchParams={searchParams} />;
   const user = await requireUser();
   const sp = await searchParams;
   const mgr = isManager(user);

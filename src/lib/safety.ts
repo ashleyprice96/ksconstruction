@@ -5,6 +5,7 @@ import { checkFile, saveFile } from "./files";
 import { sha256, signaturePng } from "./sign-off";
 import { assertHsPdfSize, pdfPageCount } from "./hs-pdf";
 import { storageDriver } from "./object-store";
+import { claimsEnabled } from "./features";
 
 export type SafetyKind = "alert" | "toolbox";
 
@@ -23,14 +24,15 @@ export interface SafetyAlert {
 
 const TARGET = `(
   NOT EXISTS (SELECT 1 FROM ops.hs_alert_sites s WHERE s.alert_id = a.id)
+  OR $2::uuid IS NULL
+  OR $3::boolean = false
   OR EXISTS (
     SELECT 1 FROM ops.hs_alert_sites s
     JOIN ops.claims c ON c.site_id = s.site_id AND c.gang_id = $2 AND c.deleted_at IS NULL
     WHERE s.alert_id = a.id))`;
 
-/** Active alerts and toolbox talks this gang lead has not confirmed. */
+/** Active alerts and toolbox talks this person has not signed. Every login is included. */
 export async function pendingSafetyAlerts(user: User): Promise<SafetyAlert[]> {
-  if (user.role !== "gang" || !user.gang_id) return [];
   return q<SafetyAlert>(
     `SELECT a.id, a.kind, a.title, a.body, a.attachment_name, a.attachment_mime, a.pdf_pages, a.published_at,
             to_char(a.due_on, 'YYYY-MM-DD') AS due_on,
@@ -42,7 +44,7 @@ export async function pendingSafetyAlerts(user: User): Promise<SafetyAlert[]> {
        SELECT 1 FROM ops.hs_acknowledgements k WHERE k.alert_id = a.id AND k.user_id = $1)
        AND ${TARGET}
      ORDER BY a.published_at`,
-    [user.id, user.gang_id]);
+    [user.id, user.gang_id, claimsEnabled()]);
 }
 
 export async function gangMustAcknowledge(user: User): Promise<boolean> {
@@ -58,7 +60,7 @@ export async function assertSafetyCleared(user: User) {
 export class SafetyError extends Error {}
 
 export async function safetyApiBlock(user: User | null): Promise<Response | null> {
-  if (!user || user.role !== "gang") return null;
+  if (!user) return null;
   if (user.must_change_password) return new Response("Set a new password before continuing.", { status: 403 });
   if (await gangMustAcknowledge(user)) return new Response("Confirm the health and safety item before continuing.", { status: 403 });
   return null;
@@ -193,14 +195,16 @@ export async function safetyRoster(): Promise<SafetyRoster[]> {
             (SELECT string_agg(m.name, ', ' ORDER BY m.name) FROM ops.hs_attendees t JOIN ops.gang_members m ON m.id = t.member_id
               WHERE t.alert_id = a.id AND t.user_id = u.id) AS attendees
      FROM ops.hs_alerts a
-     JOIN ops.users u ON u.role = 'gang' AND u.active AND (
+     JOIN ops.users u ON u.active AND (
        NOT EXISTS (SELECT 1 FROM ops.hs_alert_sites s WHERE s.alert_id = a.id)
+       OR u.gang_id IS NULL
+       OR $1::boolean = false
        OR EXISTS (
          SELECT 1 FROM ops.hs_alert_sites s
          JOIN ops.claims c ON c.site_id = s.site_id AND c.gang_id = u.gang_id AND c.deleted_at IS NULL
          WHERE s.alert_id = a.id))
      LEFT JOIN ops.hs_acknowledgements k ON k.alert_id = a.id AND k.user_id = u.id
-     ORDER BY a.published_at DESC, u.name`);
+     ORDER BY a.published_at DESC, u.name`, [claimsEnabled()]);
   const byId = new Map<string, SafetyRoster>();
   for (const row of rows) {
     let alert = byId.get(row.id);

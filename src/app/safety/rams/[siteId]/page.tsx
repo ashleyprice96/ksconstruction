@@ -7,17 +7,25 @@ import { SafetyError } from "@/lib/safety";
 import { safeMessage, str } from "@/lib/forms";
 import SignaturePad from "@/components/SignaturePad";
 import PdfViewer, { OpenedGate, SignButton } from "@/components/PdfViewer";
+import { claimsEnabled } from "@/lib/features";
 
 function clientIp(h: Headers): string {
   const fwd = h.get("x-forwarded-for")?.split(",")[0]?.trim();
   return (fwd || h.get("x-real-ip") || "unknown").slice(0, 64);
 }
 
+function afterRams(next: string) {
+  const fallback = claimsEnabled() ? "/claims/new" : "/";
+  if (!next.startsWith("/")) return fallback;
+  if (!claimsEnabled() && (next.startsWith("/claims") || next.startsWith("/payments") || next.startsWith("/rates"))) return "/";
+  return next;
+}
+
 async function confirm(f: FormData) {
   "use server";
   const user = await requireUser(["gang"]);
   const siteId = str(f, "site_id");
-  const next = str(f, "next") || "/claims/new";
+  const next = afterRams(str(f, "next"));
   const h = await headers();
   try {
     for (const id of f.getAll("rams_id").map(String)) {
@@ -35,7 +43,7 @@ async function confirm(f: FormData) {
   } catch (e) {
     redirect(`/safety/rams/${siteId}?error=${encodeURIComponent(safeMessage(e, [SafetyError]))}`);
   }
-  redirect(next.startsWith("/") ? next : "/claims/new");
+  redirect(next);
 }
 
 export default async function RamsGate({ params, searchParams }: { params: Promise<{ siteId: string }>; searchParams: Promise<Record<string, string>> }) {
@@ -43,7 +51,7 @@ export default async function RamsGate({ params, searchParams }: { params: Promi
   const { siteId } = await params;
   const sp = await searchParams;
   const docs = await pendingRams(user, siteId);
-  if (!docs.length) redirect(sp.next?.startsWith("/") ? sp.next : "/claims/new");
+  if (!docs.length) redirect(afterRams(sp.next ?? ""));
   const members = user.gang_id ? await gangMembers(user.gang_id) : [];
   return (
     <div className="login-wrap">
@@ -51,7 +59,9 @@ export default async function RamsGate({ params, searchParams }: { params: Promi
         <img src="/ks-logo.png" alt="" width={72} height={72} />
         <p className="eyebrow">Site RAMS</p>
         <h1>Read and sign</h1>
-        <p className="lede">Confirm the current RAMS for {docs[0].site} before you create or submit a claim there. The rest of the app stays open.</p>
+        <p className="lede">{claimsEnabled()
+          ? `Confirm the current RAMS for ${docs[0].site} before you create or submit a claim there. The rest of the app stays open.`
+          : `Read the current RAMS for ${docs[0].site}, sign it, and tick who was briefed. A new version needs signing again.`}</p>
         {sp.error && <div className="alert error" role="alert">{sp.error}</div>}
         <form action={confirm} className="stack">
           <input type="hidden" name="site_id" value={siteId} />

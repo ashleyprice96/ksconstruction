@@ -1,9 +1,11 @@
 import type { MetadataRoute } from "next";
+import { productName } from "@/lib/features";
 
 export default function manifest(): MetadataRoute.Manifest {
+  const name = productName();
   return {
-    name: "K-S Claims",
-    short_name: "K-S Claims",
+    name,
+    short_name: name,
     start_url: "/",
     display: "standalone",
     background_color: "#0B1020",

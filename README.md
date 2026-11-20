@@ -97,6 +97,7 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 | `APP_DB_PASSWORD` | Yes | Long random password for the `ks_app` login. |
 | `COMMERCIAL_DB_PASSWORD` | Yes | Long random password for the `ks_commercial` login. Different from the app password. |
 | `SECURE_COOKIES` | Yes in production | `true` |
+| `FEATURE_CLAIMS` | No | Leave unset. The first release is health and safety only. Set to `true` to show claims, pay runs, rates and margin again. |
 | `DATABASE_URL_APP` | No | Set only if you do not want the app URL derived from the owner URL and `APP_DB_PASSWORD`. |
 | `DATABASE_URL_COMMERCIAL` | No | Same, for the commercial login. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | No | Creates that administrator once, if the email does not exist. |
@@ -123,7 +124,7 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 
 - Host the app, database and file storage in a UK region. Swap `src/lib/files.ts` from local disk to private object storage for work photos.
 - Scanned top sheets are stored in Postgres (`ops.attachments.content`, bytea) unless `STORAGE_DRIVER=s3`. Each page is limited to 6 MB and a claim holds at most 8 pages. JPG and PNG are compressed in the browser. Only the gang that owns the claim, and office or approver accounts, can open the file. Top sheets are left out of the client backup pack.
-- Health and safety alerts, toolbox talks, and site RAMS PDFs are limited to `HS_PDF_MAX_MB` (default 50). A free Render Postgres database is 1 GB, so about 20 to 40 large RAMS fit before you should move files to object storage. Setup shows how much is stored and warns at 80% of `STORAGE_QUOTA_GB`.
+- Health and safety is the first release. Alerts and toolbox talks stop every logged-in person until they open and sign. Gang leads also tick who attended a toolbox talk and sign each site's RAMS. Claims, pay runs, rates and margin stay in the app but stay hidden until `FEATURE_CLAIMS=true`.
 
 ### Cloudflare R2 for file storage
 

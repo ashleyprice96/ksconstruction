@@ -50,7 +50,7 @@ export default async function SafetyGate({ searchParams }: { searchParams: Promi
         <img src="/ks-logo.png" alt="" width={72} height={72} />
         <p className="eyebrow">Health and safety</p>
         <h1>Read and confirm</h1>
-        <p className="lede">Confirm {alerts.length === 1 ? "this document" : "these documents"} before you can use Claims, {user.name.split(" ")[0]}.</p>
+        <p className="lede">Confirm {alerts.length === 1 ? "this document" : "these documents"} before you continue, {user.name.split(" ")[0]}.</p>
         {sp.error && <div className="alert error" role="alert">{sp.error}</div>}
         <form action={confirm} className="stack">
           <OpenedGate pdfIds={alerts.filter((a) => a.attachment_mime === "application/pdf").map((a) => a.id)}>
@@ -64,10 +64,10 @@ export default async function SafetyGate({ searchParams }: { searchParams: Promi
               )}
               {a.attachment_mime?.startsWith("image/") && <img src={`/api/safety/${a.id}`} alt={a.attachment_name ?? a.title} style={{ width: "100%", height: "auto" }} />}
               <input type="hidden" name="alert_id" value={a.id} />
-              {a.kind === "toolbox" && (
+              {a.kind === "toolbox" && user.role === "gang" && (
                 <fieldset>
                   <legend>Who attended</legend>
-                  {members.length === 0 && <p className="small muted">Add people to your gang from a claim, then come back and tick who was there.</p>}
+                  {members.length === 0 && <p className="small muted">Nobody is listed on your gang yet. You can still sign, and tick attendance once people are added.</p>}
                   {members.map((m) => (
                     <label key={m.id} className="check"><input type="checkbox" name={`attend_${a.id}`} value={m.id} /> {m.name}</label>
                   ))}
