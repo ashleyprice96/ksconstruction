@@ -1,7 +1,7 @@
 import { currentUser } from "@/lib/auth";
 import { q1 } from "@/lib/db";
 import { readStoredFile } from "@/lib/files";
-import { activeObjectStore } from "@/lib/storage-s3";
+import { isRemoteKey, remoteStore } from "@/lib/remote-file";
 import { pdfStreamResponse, readByteaSlice } from "@/lib/pdf-stream";
 
 /** PDF or image on a health and safety item. PDFs are streamed. Auth is checked first. */
@@ -17,19 +17,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!meta || !meta.attachment_name) return new Response("Not found", { status: 404 });
   if (user.role === "gang" && !meta.active) return new Response("Not found", { status: 404 });
   const name = meta.attachment_name;
-  if (meta.attachment_mime === "application/pdf" && (meta.in_db || meta.attachment_key?.startsWith("files/"))) {
+  if (meta.attachment_mime === "application/pdf" && (meta.in_db || isRemoteKey(meta.attachment_key))) {
     let length = meta.n ?? 0;
-    if (meta.attachment_key?.startsWith("files/")) {
-      const store = await activeObjectStore();
-      length = (await store?.head(meta.attachment_key)) ?? 0;
-    }
+    if (isRemoteKey(meta.attachment_key)) length = (await remoteStore(meta.attachment_key).head(meta.attachment_key)) ?? 0;
     if (!length) return new Response("Not found", { status: 404 });
     const key = meta.attachment_key;
     return pdfStreamResponse(req, { length, name }, async (start, end) => {
-      if (key?.startsWith("files/")) {
-        const store = await activeObjectStore();
-        return (await store?.get(key, { start, end })) ?? Buffer.alloc(0);
-      }
+      if (isRemoteKey(key)) return (await remoteStore(key).get(key, { start, end })) ?? Buffer.alloc(0);
       return readByteaSlice("ops.hs_alerts", "attachment_bytes", id, start, end);
     });
   }

@@ -125,6 +125,7 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 - Host the app, database and file storage in a UK region. Swap `src/lib/files.ts` from local disk to private object storage for work photos.
 - Scanned top sheets are stored in Postgres (`ops.attachments.content`, bytea) unless `STORAGE_DRIVER=s3`. Each page is limited to 6 MB and a claim holds at most 8 pages. JPG and PNG are compressed in the browser. Only the gang that owns the claim, and office or approver accounts, can open the file. Top sheets are left out of the client backup pack.
 - Health and safety is the first release. Alerts and toolbox talks stop every logged-in person until they open and sign. Gang leads also tick who attended a toolbox talk and sign each site's RAMS. Claims, pay runs, rates and margin stay in the app but stay hidden until `FEATURE_CLAIMS=true`.
+- Vercel Hobby can host the app against the Render Postgres external URL. Set `STORAGE_DRIVER=vercel-blob` so large PDFs upload from the browser. See `docs/vercel.md`.
 
 ### Cloudflare R2 for file storage
 

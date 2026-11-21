@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { q, q1 } from "@/lib/db";
-import { addAttachment, addTopSheets, loadClaim, removeAttachment, ClaimError } from "@/lib/claims";
+import { addAttachment, addTopSheets, blobPages, loadClaim, removeAttachment, ClaimError } from "@/lib/claims";
 import { listTopSheets } from "@/lib/attachments";
 import { claimContext, TYPE_LABEL } from "@/lib/lookups";
 import { back, safeMessage, str } from "@/lib/forms";
@@ -10,6 +10,7 @@ import ClaimSteps from "@/components/ClaimSteps";
 import Flash from "@/components/Flash";
 import ImageInput from "@/components/ImageInput";
 import TopSheetScanner from "@/components/TopSheetScanner";
+import { storageDriver } from "@/lib/object-store";
 
 async function upload(f: FormData) {
   "use server";
@@ -31,7 +32,8 @@ async function saveTopSheet(f: FormData) {
   const user = await requireUser(["gang"]);
   const id = str(f, "claim_id");
   const files = f.getAll("pages").filter((x): x is File => x instanceof File && x.size > 0);
-  try { await addTopSheets(user, id, files); }
+  const blobs = blobPages(f);
+  try { await addTopSheets(user, id, files, blobs); }
   catch (e) { back(`/claims/${id}/evidence`, "error", safeMessage(e, [ClaimError])); }
   back(`/claims/${id}/evidence`, "ok", "Top sheet saved.");
 }
@@ -87,7 +89,7 @@ export default async function Evidence({ params, searchParams }: { params: Promi
             ))}
           </div>
         )}
-        <TopSheetScanner action={saveTopSheet} claimId={id} />
+        <TopSheetScanner action={saveTopSheet} claimId={id} useBlob={storageDriver() === "vercel-blob"} />
       </div>
       <div className="alert info">Photos are required before this claim can be submitted (at least {need}). Keep the plot number or a landmark in shot where you can.</div>
       {client?.uses_own_forms && <div className="alert warn">This client may only accept its own forms. Fill in their form as usual and add a photo or scan of it below.</div>}

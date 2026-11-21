@@ -1,7 +1,7 @@
 import "server-only";
 import { q, q1 } from "./db";
 import type { User } from "./auth";
-import { checkFile, saveFile } from "./files";
+import { MAX_FILE_BYTES, checkFile, saveFile } from "./files";
 import { sha256, signaturePng } from "./sign-off";
 import { assertHsPdfSize, pdfPageCount } from "./hs-pdf";
 import { storageDriver } from "./object-store";
@@ -121,36 +121,46 @@ function assertPublisher(user: User) {
 export async function publishSafetyAlert(user: User, input: {
   kind: SafetyKind; title: string; body: string; active: boolean; dueOn: string;
   siteIds: string[]; file: File | null;
+  /** Bytes already checked. `key` is set when they live in Blob or S3 and must not be copied into Postgres. */
+  prepared?: { name: string; type: string; bytes: Buffer; key: string | null } | null;
 }) {
   assertPublisher(user);
   const title = input.title.trim();
   const body = input.body.trim();
   if (title.length < 3) throw new SafetyError("Enter a title.");
-  const file = input.file && input.file.size > 0 ? input.file : null;
-  if (!file && body.length < 3) throw new SafetyError("Add a PDF, or write the text.");
+  const prepared = input.prepared ?? null;
+  const file = !prepared && input.file && input.file.size > 0 ? input.file : null;
+  if (!file && !prepared && body.length < 3) throw new SafetyError("Add a PDF, or write the text.");
   if (input.dueOn && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueOn)) throw new SafetyError("Check the due date.");
   let key: string | null = null;
   let name: string | null = null;
   let mime: string | null = null;
   let bytes: Buffer | null = null;
   let pageCount: number | null = null;
-  let hashed = Buffer.from(body, "utf8");
-  if (file) {
-    if (input.kind === "toolbox" && file.type !== "application/pdf") throw new SafetyError("A toolbox talk file must be a PDF.");
-    if (file.type === "application/pdf") {
-      try { assertHsPdfSize(file.size); }
+  let hashed: Buffer = Buffer.from(body, "utf8");
+  const incoming = prepared
+    ? { raw: prepared.bytes, type: prepared.type, filename: prepared.name, keptKey: prepared.key }
+    : file
+      ? { raw: Buffer.from(await file.arrayBuffer()), type: file.type, filename: file.name, keptKey: null as string | null }
+      : null;
+  if (incoming) {
+    if (input.kind === "toolbox" && incoming.type !== "application/pdf") throw new SafetyError("A toolbox talk file must be a PDF.");
+    if (incoming.type === "application/pdf") {
+      try { assertHsPdfSize(incoming.raw.length); }
       catch (e) { throw new SafetyError(e instanceof Error ? e.message : "The PDF is too large."); }
-    } else {
-      const err = checkFile(file, true);
+    } else if (!prepared) {
+      const err = checkFile(file!, true);
       if (err) throw new SafetyError(err);
+    } else if (incoming.raw.length > MAX_FILE_BYTES || !["image/jpeg", "image/png", "image/webp"].includes(incoming.type)) {
+      throw new SafetyError("Use a JPG, PNG or WebP under 15 MB, or a PDF.");
     }
-    const raw = Buffer.from(await file.arrayBuffer());
-    pageCount = file.type === "application/pdf" ? await pdfPageCount(raw).catch(() => null) : null;
-    hashed = file.type === "application/pdf" ? raw : hashed;
-    if (file.type === "application/pdf" && storageDriver() !== "s3") bytes = raw;
-    else key = await saveFile(raw, file.type);
-    name = file.name.slice(0, 200);
-    mime = file.type;
+    pageCount = incoming.type === "application/pdf" ? await pdfPageCount(incoming.raw).catch(() => null) : null;
+    if (incoming.type === "application/pdf") hashed = incoming.raw;
+    if (incoming.keptKey) key = incoming.keptKey;
+    else if (incoming.type === "application/pdf" && storageDriver() === "postgres") bytes = incoming.raw;
+    else key = await saveFile(incoming.raw, incoming.type);
+    name = incoming.filename.slice(0, 200);
+    mime = incoming.type;
   }
   const row = await q1<{ id: string }>(
     `INSERT INTO ops.hs_alerts (kind, title, body, active, due_on, revision, content_sha256, pdf_pages, attachment_key, attachment_name, attachment_mime, attachment_bytes, published_by)

@@ -11,7 +11,8 @@ import { resolveGangRate, resolveLiftValue } from "./rates";
 import { assertSafetyCleared } from "./safety";
 import { checkFile, saveFile } from "./files";
 import { storageDriver } from "./object-store";
-import { TOP_SHEET_MAX_PAGES, checkTopSheet, topSheetCount } from "./attachments";
+import { TOP_SHEET_MAX_BYTES, TOP_SHEET_MAX_PAGES, checkTopSheet, topSheetCount } from "./attachments";
+import { loadPrivateUpload } from "./storage-blob";
 import { repriceMemberSplits, writeMemberSplits, MemberSplitError, type SplitRequest } from "./members";
 import { assertRamsCleared } from "./rams";
 
@@ -153,8 +154,20 @@ export async function addAttachment(user: User, claimId: string, kind: string, f
   await audit(user.id, "claim", claimId, "attachment_added", { kind, attachment: row!.id });
 }
 
-/** Paper or PDF top sheet. Bytes are stored in Postgres, not on the server disk. */
-export async function addTopSheets(user: User, claimId: string, files: File[]) {
+export interface BlobPage { pathname: string; name: string; type: string; sha256: string }
+
+export function blobPages(f: FormData): BlobPage[] {
+  const paths = f.getAll("blob_pathname").map(String).filter(Boolean);
+  const names = f.getAll("blob_name").map(String);
+  const types = f.getAll("blob_type").map(String);
+  const hashes = f.getAll("blob_sha").map(String);
+  return paths.map((pathname, i) => ({
+    pathname, name: names[i] || "top-sheet", type: types[i] || "", sha256: hashes[i] || "",
+  }));
+}
+
+/** Paper or PDF top sheet. Bytes are stored in Postgres, not on the server disk, unless the driver is object storage. */
+export async function addTopSheets(user: User, claimId: string, files: File[], blobs: BlobPage[] = []) {
   const c = await loadClaim(user, claimId);
   if (user.role === "gang") {
     await assertSafetyCleared(user);
@@ -166,20 +179,34 @@ export async function addTopSheets(user: User, claimId: string, files: File[]) {
     throw new ClaimError("Only the gang or the office can add a top sheet.");
   }
   const pages = files.filter((f) => f && f.size > 0);
-  if (!pages.length) throw new ClaimError("Choose a page or a PDF.");
-  if (await topSheetCount(claimId) + pages.length > TOP_SHEET_MAX_PAGES) {
+  const stored = blobs.filter((b) => b.pathname);
+  if (!pages.length && !stored.length) throw new ClaimError("Choose a page or a PDF.");
+  if (await topSheetCount(claimId) + pages.length + stored.length > TOP_SHEET_MAX_PAGES) {
     throw new ClaimError(`A claim can hold ${TOP_SHEET_MAX_PAGES} top sheet pages.`);
+  }
+  for (const page of stored) {
+    if (!page.pathname.startsWith("blob/topsheet/")) throw new ClaimError("That file is not a top sheet upload.");
+    let loaded: { bytes: Buffer; type: string };
+    try { loaded = await loadPrivateUpload(page.pathname, page.sha256, TOP_SHEET_MAX_BYTES); }
+    catch (e) { throw new ClaimError(e instanceof Error ? e.message : "Upload failed."); }
+    const type = page.type || loaded.type;
+    if (type !== "image/jpeg" && type !== "image/png" && type !== "application/pdf") throw new ClaimError("Use a JPG, PNG or PDF.");
+    const row = await q1<{ id: string }>(
+      `INSERT INTO ops.attachments (claim_id, kind, storage_key, original_name, mime, size_bytes, uploaded_by, content)
+       VALUES ($1, 'top_sheet', $2, $3, $4, $5, $6, NULL) RETURNING id`,
+      [claimId, page.pathname, (page.name || "top-sheet").slice(0, 200), type, loaded.bytes.length, user.id]);
+    await audit(user.id, "claim", claimId, "top_sheet_added", { attachment: row!.id, bytes: loaded.bytes.length });
   }
   for (const file of pages) {
     const err = checkTopSheet(file);
     if (err) throw new ClaimError(err);
     const bytes = Buffer.from(await file.arrayBuffer());
-    const onS3 = storageDriver() === "s3";
-    const key = onS3 ? await saveFile(bytes, file.type) : `pg/${randomUUID()}`;
+    const external = storageDriver() !== "postgres";
+    const key = external ? await saveFile(bytes, file.type) : `pg/${randomUUID()}`;
     const row = await q1<{ id: string }>(
       `INSERT INTO ops.attachments (claim_id, kind, storage_key, original_name, mime, size_bytes, uploaded_by, content)
        VALUES ($1, 'top_sheet', $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [claimId, key, file.name.slice(0, 200), file.type, bytes.length, user.id, onS3 ? null : bytes]);
+      [claimId, key, file.name.slice(0, 200), file.type, bytes.length, user.id, external ? null : bytes]);
     await audit(user.id, "claim", claimId, "top_sheet_added", { attachment: row!.id, bytes: bytes.length });
   }
 }

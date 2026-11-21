@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { storageDriver } from "./object-store";
+import { isRemoteKey, remoteStore } from "./remote-file";
 import { activeObjectStore } from "./storage-s3";
 
 // Disk storage for the postgres driver. When STORAGE_DRIVER=s3, bytes go to a
@@ -29,6 +30,11 @@ export function objectKey(mime: string): string {
 }
 
 export async function saveFile(data: Buffer, mime: string): Promise<string> {
+  if (storageDriver() === "vercel-blob") {
+    const key = `blob/${objectKey(mime)}`;
+    await remoteStore(key).put(key, data, mime);
+    return key;
+  }
   if (storageDriver() === "s3") {
     const key = objectKey(mime);
     const store = await activeObjectStore();
@@ -44,9 +50,8 @@ export async function saveFile(data: Buffer, mime: string): Promise<string> {
 }
 
 export async function readStoredFile(key: string): Promise<Buffer> {
-  if (key.startsWith("files/")) {
-    const store = await activeObjectStore();
-    const body = store ? await store.get(key) : null;
+  if (isRemoteKey(key)) {
+    const body = await remoteStore(key).get(key);
     if (!body) throw new Error("missing object");
     return body;
   }

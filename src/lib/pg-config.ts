@@ -79,7 +79,9 @@ export function readDbMode(): DbMode {
   try {
     const raw = JSON.parse(readFileSync(join(process.cwd(), DB_MODE_FILE), "utf8")) as { mode?: string };
     if (raw.mode === "separate-login" || raw.mode === "set-role" || raw.mode === "shared-owner") return raw.mode;
-  } catch { /* no file yet: local .env with explicit app URLs */ }
+  } catch { /* no file yet: local .env with explicit app URLs, or a Vercel function */ }
+  // Vercel has no mode file. One external DATABASE_URL is enough; separate logins are used when their URLs are set.
+  if (process.env.VERCEL === "1" && !process.env.DATABASE_URL_APP && !process.env.DATABASE_URL_COMMERCIAL) return "shared-owner";
   return "separate-login";
 }
 

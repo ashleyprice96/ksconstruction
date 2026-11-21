@@ -1,15 +1,17 @@
 /** Where file bytes live. Postgres is the default so a deploy without object storage keeps working. */
-export type StorageDriverName = "postgres" | "s3";
+export type StorageDriverName = "postgres" | "s3" | "vercel-blob";
 
 export function storageDriver(): StorageDriverName {
-  return process.env.STORAGE_DRIVER === "s3" ? "s3" : "postgres";
+  if (process.env.STORAGE_DRIVER === "s3") return "s3";
+  if (process.env.STORAGE_DRIVER === "vercel-blob") return "vercel-blob";
+  return "postgres";
 }
 
-/** Bytes the meter compares with. Unset on S3 means no percentage. Postgres defaults to the 1 GB free database. */
+/** Bytes the meter compares with. Unset on S3 means no percentage. Postgres and Vercel Blob default to 1 GB. */
 export function storageQuotaBytes(): number | null {
   const raw = Number(process.env.STORAGE_QUOTA_GB);
   if (Number.isFinite(raw) && raw > 0) return raw * 1024 * 1024 * 1024;
-  if (storageDriver() === "postgres") return 1024 * 1024 * 1024;
+  if (storageDriver() === "postgres" || storageDriver() === "vercel-blob") return 1024 * 1024 * 1024;
   return null;
 }
 

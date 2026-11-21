@@ -12,6 +12,7 @@ import { publishRams, ramsRoster } from "@/lib/rams";
 import { deletedClaims, restoreClaim, ClaimError } from "@/lib/claims";
 import ProgressForm from "@/components/ProgressForm";
 import { formatBytes, storageUsage } from "@/lib/storage-usage";
+import { storageDriver } from "@/lib/object-store";
 import { back, safeMessage, str } from "@/lib/forms";
 import { claimsEnabled } from "@/lib/features";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
@@ -701,14 +702,14 @@ async function SafetyTab({ admin }: { admin: boolean }) {
   return (
     <>
       <div className={`alert ${usage.warning ? "warn" : "info"}`} data-testid="storage-meter">
-        Stored files: {usage.bytes ? formatBytes(usage.bytes) : "0 MB"} on {usage.driver === "s3" ? "S3" : "Postgres"}
+        Stored files: {usage.bytes ? formatBytes(usage.bytes) : "0 MB"} on {usage.driver === "s3" ? "S3" : usage.driver === "vercel-blob" ? "Vercel Blob" : "Postgres"}
         {usage.quota ? ` of ${formatBytes(usage.quota)}` : ""}.
-        {usage.warning ? ` ${usage.warning}` : usage.driver === "postgres" ? " A free Render Postgres database is 1 GB, so about 20 to 40 large RAMS fit." : ""}
+        {usage.warning ? ` ${usage.warning}` : usage.driver === "postgres" ? " A free Render Postgres database is 1 GB, so about 20 to 40 large RAMS fit." : usage.driver === "vercel-blob" ? " Hobby Blob storage includes 1 GB." : ""}
       </div>
       <p className="small"><a href="/api/safety/export">Download alert and toolbox CSV</a> · <a href="/api/rams/export">Download RAMS CSV</a></p>
       {admin ? (
         <>
-          <ProgressForm actionUrl="/api/safety/upload" button="Publish">
+          <ProgressForm actionUrl="/api/safety/upload" button="Publish" blobPurpose={storageDriver() === "vercel-blob" ? "hs" : undefined}>
             <h2 style={{ marginTop: 0 }}>Publish an alert or toolbox talk</h2>
             <p className="small muted">Only an administrator publishes these. Everyone with a login must sign each active alert and toolbox talk. Gang leads also record who attended a talk, and who was briefed on a site RAMS.</p>
             <div className="row">
@@ -722,7 +723,7 @@ async function SafetyTab({ admin }: { admin: boolean }) {
               <select id="hs_sites" name="site_id" multiple size={4}>{sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
             <label className="check"><input type="checkbox" name="active" defaultChecked /> Active</label>
           </ProgressForm>
-          <ProgressForm actionUrl="/api/rams/upload" button="Publish RAMS">
+          <ProgressForm actionUrl="/api/rams/upload" button="Publish RAMS" blobPurpose={storageDriver() === "vercel-blob" ? "rams" : undefined}>
             <h2 style={{ marginTop: 0 }}>Publish site RAMS</h2>
             <p className="small muted">{claimsEnabled()
               ? "A gang lead must read and sign the current RAMS, and tick who was briefed, before they can create or submit a claim on that site. A new revision has to be confirmed again."

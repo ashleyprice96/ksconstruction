@@ -2,12 +2,15 @@ import "server-only";
 import { q1 } from "./db";
 import { quotaWarning, storageDriver, storageQuotaBytes } from "./object-store";
 import { activeObjectStore } from "./storage-s3";
+import { blobObjectStore } from "./storage-blob";
 
 export async function storageUsage() {
   const driver = storageDriver();
   let bytes = 0;
   if (driver === "s3") {
     bytes = (await (await activeObjectStore())?.totalBytes()) ?? 0;
+  } else if (driver === "vercel-blob") {
+    bytes = await blobObjectStore().totalBytes();
   } else {
     const row = await q1<{ n: string }>(
       `SELECT (
