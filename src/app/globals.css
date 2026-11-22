@@ -867,3 +867,29 @@ dialog.confirm-dialog {
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; transition: none !important; }
 }
+
+.sign-page {
+  min-height: 100vh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 16px 56px;
+}
+.sign-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sign-brand img { border-radius: 12px; }
+.sign-brand strong, .sign-brand small { display: block; }
+.sign-brand small { color: var(--ks-orange); }
+.sign-card h1 { margin: 4px 0 8px; font-size: 1.7rem; line-height: 1.2; }
+.sign-site { margin: 0 0 8px; color: var(--muted); }
+.sign-step { margin: 22px 0 8px; font-size: 1.05rem; }
+.sign-view { display: inline-flex; margin-bottom: 12px; }
+.sign-photo { width: 100%; height: auto; border-radius: 12px; }
+.sign-body { white-space: pre-line; }
+.sign-form .sign-submit { min-height: 56px; font-size: 1.1rem; width: 100%; }
+.sign-page .sigpad { height: 280px; }
+.sign-success { padding: 12px 0 8px; }
+.sign-success h2 { margin: 4px 0 8px; }

@@ -4,9 +4,15 @@ import { currentUser } from "@/lib/auth";
 import { fmtDateTime } from "@/lib/dates";
 import { safeMessage, str } from "@/lib/forms";
 import { emailShareSigned } from "@/lib/mail";
-import { SHARE_KIND_LABEL, shareByToken, shareNotifyTo, signShare, userSigned, ShareError } from "@/lib/share";
+import { SHARE_KIND_LABEL, shareByToken, shareNotifyTo, signShare, userSigned, ShareError, type ShareKind } from "@/lib/share";
 import PdfViewer from "@/components/PdfViewer";
 import SignFormClient from "./sign-form";
+
+const DOC_LABEL: Record<ShareKind, string> = {
+  rams: "RAMS",
+  toolbox: "toolbox talk",
+  alert: "safety alert",
+};
 
 function clientIp(h: Headers): string {
   const fwd = h.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -23,7 +29,7 @@ async function confirm(f: FormData) {
   "use server";
   const h = await headers();
   const user = await currentUser();
-  if (f.get("confirm") !== "on") return { error: "Tick to confirm you have read and understood." };
+  if (f.get("confirm") !== "on") return { error: "Please tick the box to confirm you have read and understood the document." };
   try {
     const saved = await signShare({
       token: str(f, "token"),
@@ -36,7 +42,7 @@ async function confirm(f: FormData) {
     });
     const to = shareNotifyTo();
     if (to) {
-      const copy = `${originFrom(h)}/api/share/${saved.item.id}/signed-copy`;
+      const copy = `${originFrom(h)}/api/share/${saved.item.id}/signed-copy?signer=${saved.signatureId}`;
       after(() => emailShareSigned({
         to,
         name: saved.name,
@@ -55,38 +61,72 @@ async function confirm(f: FormData) {
   }
 }
 
+function Brand() {
+  return (
+    <header className="sign-brand">
+      <img src="/ks-logo.png" alt="" width={48} height={48} />
+      <span>
+        <strong>K-S Construction Group</strong>
+        <small>Health and safety</small>
+      </span>
+    </header>
+  );
+}
+
 export default async function SignPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const item = await shareByToken(token);
   const user = await currentUser();
   const done = item && user ? await userSigned(item.id, item.version, user.id) : false;
+  const fileHref = `/api/sign/${token}`;
   return (
-    <div className="login-wrap">
-      <div className="login-card wide">
-        <img src="/ks-logo.png" alt="" width={72} height={72} />
-        {!item && <h1>Link not found</h1>}
-        {item && !item.active && (
-          <>
-            <p className="eyebrow">Signing link</p>
-            <h1>{item.title}</h1>
-            <p className="lede">This link is switched off.</p>
-          </>
-        )}
-        {item && item.active && (
-          <>
-            <p className="eyebrow">{SHARE_KIND_LABEL[item.kind]}{item.site_name ? ` · ${item.site_name}` : ""}</p>
-            <h1>{item.title}</h1>
-            {item.body && <p style={{ whiteSpace: "pre-line" }}>{item.body}</p>}
-            {item.file_mime === "application/pdf" && (
-              <PdfViewer id={item.id} src={`/api/sign/${token}`} pages={item.pdf_pages} title={item.title} />
-            )}
-            {item.file_mime?.startsWith("image/") && (
-              <img src={`/api/sign/${token}`} alt={item.file_name ?? item.title} style={{ width: "100%", height: "auto" }} />
-            )}
-            {done ? <p className="lede">You have signed this.</p> : <SignFormClient token={token} name={user?.name ?? ""} action={confirm} />}
-          </>
-        )}
-      </div>
+    <div className="sign-page">
+      <Brand />
+      {!item && (
+        <section className="sign-card">
+          <h1>Link not recognised</h1>
+          <p>This signing link does not exist. Ask the office to send it again.</p>
+        </section>
+      )}
+      {item && !item.active && (
+        <section className="sign-card">
+          <p className="eyebrow">{SHARE_KIND_LABEL[item.kind]}</p>
+          <h1>{item.title}</h1>
+          {item.site_name && <p className="sign-site">{item.site_name}</p>}
+          <p>This link has been switched off. Please ask the office for a new link.</p>
+        </section>
+      )}
+      {item && item.active && (
+        <section className="sign-card">
+          <p className="eyebrow">{SHARE_KIND_LABEL[item.kind]}</p>
+          <h1>{item.title}</h1>
+          <p className="sign-site">{item.site_name?.trim() || "Site not given"}</p>
+          <h2 className="sign-step">1. Read the document</h2>
+          {item.file_mime === "application/pdf" && (
+            <>
+              <a className="btn sign-view" href={fileHref} target="_blank" rel="noreferrer">View document</a>
+              <PdfViewer id={item.id} src={fileHref} pages={item.pdf_pages} title={item.title} />
+            </>
+          )}
+          {item.file_mime?.startsWith("image/") && (
+            <>
+              <a className="btn sign-view" href={fileHref} target="_blank" rel="noreferrer">View document</a>
+              <img className="sign-photo" src={fileHref} alt={item.file_name ?? item.title} />
+            </>
+          )}
+          {item.body && <p className="sign-body">{item.body}</p>}
+          {!item.file_mime && !item.body && <p>No document was attached. You can still sign below.</p>}
+          {done ? (
+            <div className="sign-success" role="status">
+              <p className="eyebrow">Recorded</p>
+              <h2>You have already signed this.</h2>
+              <p>Thank you. You can close this page.</p>
+            </div>
+          ) : (
+            <SignFormClient token={token} name={user?.name ?? ""} docLabel={DOC_LABEL[item.kind]} action={confirm} />
+          )}
+        </section>
+      )}
     </div>
   );
 }
