@@ -33,6 +33,7 @@ export interface ShareItem {
   storage_key: string | null;
   content_sha256: string | null;
   pdf_pages: number | null;
+  created_at: string;
 }
 
 const IMAGE = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -101,7 +102,7 @@ export async function setShareActive(user: User, id: string, active: boolean) {
 export async function shareByToken(token: string): Promise<ShareItem | null> {
   if (!token || token.length < 20 || token.length > 80) return null;
   const row = await q1<ShareItem>(
-    `SELECT id, token, kind, title, body, site_name, active, version, file_name, file_mime, file_bytes, storage_key, content_sha256, pdf_pages
+    `SELECT id, token, kind, title, body, site_name, active, version, file_name, file_mime, file_bytes, storage_key, content_sha256, pdf_pages, created_at
      FROM ops.share_items WHERE token = $1`, [token]);
   if (!row) return null;
   return { ...row, file_bytes: asBuffer(row.file_bytes) };
@@ -110,7 +111,7 @@ export async function shareByToken(token: string): Promise<ShareItem | null> {
 export async function shareById(id: string): Promise<ShareItem | null> {
   if (!/^[0-9a-f-]{36}$/.test(id)) return null;
   const row = await q1<ShareItem>(
-    `SELECT id, token, kind, title, body, site_name, active, version, file_name, file_mime, file_bytes, storage_key, content_sha256, pdf_pages
+    `SELECT id, token, kind, title, body, site_name, active, version, file_name, file_mime, file_bytes, storage_key, content_sha256, pdf_pages, created_at
      FROM ops.share_items WHERE id = $1`, [id]);
   if (!row) return null;
   return { ...row, file_bytes: asBuffer(row.file_bytes) };
@@ -144,7 +145,7 @@ export async function signaturesFor(itemId: string, version: number): Promise<Sh
 export async function signShare(input: {
   token: string; fullName: string; company: string; signatureDataUrl: string;
   ip: string; userAgent: string; userId: string | null;
-}): Promise<{ item: ShareItem; name: string; company: string; png: Buffer }> {
+}): Promise<{ item: ShareItem; name: string; company: string; png: Buffer; signatureId: string }> {
   const item = await shareByToken(input.token);
   if (!item || !item.active) throw new ShareError("This link is switched off.");
   const name = input.fullName.trim().replace(/\s+/g, " ");
@@ -162,11 +163,11 @@ export async function signShare(input: {
             OR (lower(btrim(full_name)) = lower($4) AND lower(btrim(company)) = lower($5)))`,
     [item.id, item.version, input.userId, name, company]);
   if (dup) throw new ShareError("This name has already signed this document.");
-  await q(
+  const saved = await q1<{ id: string }>(
     `INSERT INTO ops.share_signatures (item_id, version, user_id, full_name, company, signature_png, ip, user_agent)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [item.id, item.version, input.userId, name.slice(0, 80), company, png, (input.ip || "unknown").slice(0, 64), (input.userAgent || "unknown").slice(0, 300)]);
-  return { item, name: name.slice(0, 80), company, png };
+  return { item, name: name.slice(0, 80), company, png, signatureId: saved!.id };
 }
 
 export interface ShareCard {

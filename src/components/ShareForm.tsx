@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { uploadPrivateBlob } from "@/lib/blob-client";
+import ShareLinkActions from "@/components/ShareLinkActions";
 
-type LinkRow = { title: string; url: string };
+type LinkRow = { title: string; url: string; kind: string; site: string };
+
+const KIND_LABEL: Record<string, string> = { rams: "RAMS", toolbox: "toolbox talk", alert: "safety alert" };
 
 export default function ShareForm({ sites, useBlob }: { sites: string[]; useBlob: boolean }) {
   const [kind, setKind] = useState("rams");
@@ -36,7 +39,7 @@ export default function ShareForm({ sites, useBlob }: { sites: string[]; useBlob
         setPending(false);
         return;
       }
-      setLinks((rows) => [{ title: body.title || "Document", url: body.url! }, ...rows]);
+      setLinks((rows) => [{ title: body.title || "Document", url: body.url!, kind: KIND_LABEL[kind] || "document", site }, ...rows]);
       form.reset();
       setKind(String(data.get("kind") || "rams"));
       setSite(String(data.get("site_name") || ""));
@@ -45,10 +48,6 @@ export default function ShareForm({ sites, useBlob }: { sites: string[]; useBlob
       setError(err instanceof Error ? err.message : "Could not create the link.");
     }
     setPending(false);
-  }
-
-  async function copy(url: string) {
-    try { await navigator.clipboard.writeText(url); } catch { /* the link is still on screen */ }
   }
 
   return (
@@ -77,16 +76,13 @@ export default function ShareForm({ sites, useBlob }: { sites: string[]; useBlob
         )}
         <div><label htmlFor="share_file">PDF or photo</label><input id="share_file" name="file" type="file" accept={kind === "alert" ? "application/pdf,image/jpeg,image/png,image/webp" : "application/pdf,image/jpeg,image/png,image/webp"} /></div>
         {error && <div className="alert error" role="alert">{error}</div>}
-        <button className="btn" type="submit" disabled={pending}>{pending ? "Creating link…" : "Create link"}</button>
+        <button className="btn" type="submit" disabled={pending}>{pending ? "Creating link..." : "Create link"}</button>
       </form>
       {links.map((link) => (
         <div key={link.url} className="panel">
           <p style={{ marginTop: 0 }}><strong>{link.title}</strong></p>
           <p className="small" style={{ wordBreak: "break-all" }}>{link.url}</p>
-          <div className="row">
-            <button className="btn secondary small" type="button" onClick={() => copy(link.url)}>Copy link</button>
-            <a className="btn secondary small" href={`https://wa.me/?text=${encodeURIComponent(`${link.title}\n${link.url}`)}`} target="_blank" rel="noreferrer">WhatsApp</a>
-          </div>
+          <ShareLinkActions kind={link.kind} title={link.title} site={link.site} url={link.url} />
         </div>
       ))}
     </div>
