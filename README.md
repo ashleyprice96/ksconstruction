@@ -113,7 +113,8 @@ The mode is printed at boot (`separate-login`, `set-role`, or `shared-owner`). P
 | `S3_REGION` | When `s3` | `auto` for R2. A real region for AWS, such as `eu-west-2`. |
 | `STORAGE_QUOTA_GB` | No | Setup warns at 80% of this quota. When unset and the driver is postgres, the meter uses 1 GB. |
 | `ADMIN_EMAIL` | For `storage:migrate` | Must be an active administrator. |
-| `RESET_REQUEST_EMAIL` | No | Office inbox that receives password-reset requests. If this or `SMTP_HOST` is unset, the request is still recorded in Setup and no email is sent. |
+| `RESET_REQUEST_EMAIL` | No | Office inbox that receives password-reset requests. If this or `SMTP_HOST` is unset, the request is still recorded in Setup and no email is sent. Also used for share-to-sign emails when `SIGN_NOTIFY_EMAIL` is unset. |
+| `SIGN_NOTIFY_EMAIL` | No | Inbox for each share-to-sign signature. Falls back to `RESET_REQUEST_EMAIL`. No email is sent when `SMTP_HOST` is unset. |
 | `SMTP_HOST` | No | SMTP server. Leave unset to skip email. |
 | `SMTP_PORT` | No | Defaults to `587`. Port `465` uses TLS from the start. |
 | `SMTP_USER` | No | SMTP username, if the server requires authentication. |

@@ -1,12 +1,13 @@
 import { hsPdfMaxBytes } from "./hs-pdf";
 
 /** What the browser is uploading. Health and safety files are not the same as a top sheet. */
-export type BlobPurpose = "hs" | "rams" | "topsheet";
+export type BlobPurpose = "hs" | "rams" | "topsheet" | "share";
 
 const PREFIX: Record<BlobPurpose, string> = {
   hs: "blob/hs/",
   rams: "blob/rams/",
   topsheet: "blob/topsheet/",
+  share: "blob/share/",
 };
 
 export function purposeOf(clientPayload: string | null): string {
@@ -19,7 +20,7 @@ export function purposeOf(clientPayload: string | null): string {
 }
 
 export function isBlobPurpose(value: string): value is BlobPurpose {
-  return value === "hs" || value === "rams" || value === "topsheet";
+  return value === "hs" || value === "rams" || value === "topsheet" || value === "share";
 }
 
 /** Pathnames the server will later download. A full URL is never accepted. */
@@ -28,7 +29,7 @@ export function blobPathAllowed(pathname: string, purpose: BlobPurpose): boolean
     && pathname.length <= 240
     && !pathname.includes("..")
     && !pathname.includes("://")
-    && /^blob\/(hs|rams|topsheet)\/[A-Za-z0-9._-]+$/.test(pathname);
+    && /^blob\/(hs|rams|topsheet|share)\/[A-Za-z0-9._-]+$/.test(pathname);
 }
 
 export type BlobDecision =
@@ -43,7 +44,7 @@ export type BlobDecision =
 export function decideBlobToken(role: string | null | undefined, purposeRaw: string, pathname: string): BlobDecision {
   if (!role) return { ok: false, status: 401, error: "Sign in first." };
   if (!isBlobPurpose(purposeRaw)) return { ok: false, status: 400, error: "Unknown upload." };
-  const hs = purposeRaw === "hs" || purposeRaw === "rams";
+  const hs = purposeRaw === "hs" || purposeRaw === "rams" || purposeRaw === "share";
   if (hs && role !== "admin" && role !== "management") {
     return { ok: false, status: 403, error: "Only an administrator or a manager can upload a health and safety file." };
   }

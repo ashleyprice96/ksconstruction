@@ -13,6 +13,7 @@ import { deletedClaims, restoreClaim, ClaimError } from "@/lib/claims";
 import ProgressForm from "@/components/ProgressForm";
 import { formatBytes, storageUsage } from "@/lib/storage-usage";
 import { storageDriver } from "@/lib/object-store";
+import SharePanel from "./share-panel";
 import { back, safeMessage, str } from "@/lib/forms";
 import { claimsEnabled } from "@/lib/features";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
@@ -701,6 +702,7 @@ async function SafetyTab({ admin }: { admin: boolean }) {
   ]);
   return (
     <>
+      <SharePanel sites={sites.map((s) => s.name)} useBlob={storageDriver() === "vercel-blob"} />
       <div className={`alert ${usage.warning ? "warn" : "info"}`} data-testid="storage-meter">
         Stored files: {usage.bytes ? formatBytes(usage.bytes) : "0 MB"} on {usage.driver === "s3" ? "S3" : usage.driver === "vercel-blob" ? "Vercel Blob" : "Postgres"}
         {usage.quota ? ` of ${formatBytes(usage.quota)}` : ""}.

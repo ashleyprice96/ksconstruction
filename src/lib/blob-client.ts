@@ -2,7 +2,7 @@
 
 import { upload } from "@vercel/blob/client";
 
-export type BlobPurpose = "hs" | "rams" | "topsheet";
+export type BlobPurpose = "hs" | "rams" | "topsheet" | "share";
 
 export async function fileSha256(file: File): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
@@ -11,7 +11,7 @@ export async function fileSha256(file: File): Promise<string> {
 
 /** Send a file straight to private Blob. The function only receives the pathname afterwards. */
 export async function uploadPrivateBlob(file: File, purpose: BlobPurpose, onProgress?: (pct: number) => void) {
-  const folder = purpose === "rams" ? "blob/rams" : purpose === "topsheet" ? "blob/topsheet" : "blob/hs";
+  const folder = purpose === "rams" ? "blob/rams" : purpose === "topsheet" ? "blob/topsheet" : purpose === "share" ? "blob/share" : "blob/hs";
   const safe = (file.name || "file").replace(/[^\w.\-]+/g, "_").slice(-80);
   const sha256 = await fileSha256(file);
   const blob = await upload(`${folder}/${safe}`, file, {

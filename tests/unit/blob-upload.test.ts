@@ -40,6 +40,8 @@ describe("blob upload token", () => {
 
   it("lets an administrator or a manager upload a health and safety file, and refuses everyone else", async () => {
     expect((await tokenRequest("admin", "hs", "blob/hs/talk.pdf")).status).toBe(200);
+    expect((await tokenRequest("management", "share", "blob/share/rams.pdf")).status).toBe(200);
+    expect((await tokenRequest("gang", "share", "blob/share/rams.pdf")).status).toBe(403);
     expect((await tokenRequest("management", "rams", "blob/rams/site.pdf")).status).toBe(200);
     expect((await tokenRequest("gang", "hs", "blob/hs/talk.pdf")).status).toBe(403);
     expect((await tokenRequest("contracts_manager", "toolbox", "blob/hs/talk.pdf")).status).toBe(400);
