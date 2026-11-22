@@ -4,13 +4,14 @@ import { q } from "@/lib/db";
 import { pendingSafetyAlerts } from "@/lib/safety";
 import { claimsEnabled } from "@/lib/features";
 import Flash from "@/components/Flash";
+import ShareInbox from "@/components/ShareInbox";
 
 export default async function HsHome({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const user = await requireUser();
   const sp = await searchParams;
   const gang = user.role === "gang";
   if (gang) return <GangHome user={user} sp={sp} />;
-  return <OfficeHome canSetup={isManager(user)} sp={sp} />;
+  return <OfficeHome userId={user.id} canSetup={isManager(user)} sp={sp} />;
 }
 
 async function GangHome({ user, sp }: { user: import("@/lib/auth").User; sp: Record<string, string> }) {
@@ -42,6 +43,7 @@ async function GangHome({ user, sp }: { user: import("@/lib/auth").User; sp: Rec
         </div>
       </div>
       <Flash sp={sp} />
+      <ShareInbox userId={user.id} />
       <div className="kpi-strip">
         <div className="stat"><div className="l">Alerts to sign</div><div className="n">{alerts.length}</div></div>
         <div className="stat"><div className="l">Toolbox talks to sign</div><div className="n">{talks.length}</div></div>
@@ -79,7 +81,7 @@ function Waiting({ title, items, empty }: { title: string; items: { id: string; 
   );
 }
 
-async function OfficeHome({ canSetup, sp }: { canSetup: boolean; sp: Record<string, string> }) {
+async function OfficeHome({ userId, canSetup, sp }: { userId: string; canSetup: boolean; sp: Record<string, string> }) {
   const claimsOff = !claimsEnabled();
   const rows = await q<{ id: string; kind: string; title: string; site: string | null; outstanding: string; missing: string | null }>(
     `SELECT a.id, a.kind, a.title, NULL::text AS site,
@@ -121,6 +123,7 @@ async function OfficeHome({ canSetup, sp }: { canSetup: boolean; sp: Record<stri
         {canSetup && <div className="actions"><Link className="btn" href="/setup?s=safety">Open Setup</Link></div>}
       </div>
       <Flash sp={sp} />
+      <ShareInbox userId={userId} />
       <Status title="Alerts" rows={alerts} />
       <Status title="Toolbox talks" rows={talks} />
       <Status title="Site RAMS" rows={rams} />

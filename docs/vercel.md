@@ -30,3 +30,11 @@ Server actions accept at most 4 MB. Adding a site and the other Setup forms are 
 - `SECURE_COOKIES`
 - `FEATURE_CLAIMS`
 - `HS_PDF_MAX_MB`
+- `SIGN_NOTIFY_EMAIL`
+- `RESET_REQUEST_EMAIL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
+- `APP_URL`

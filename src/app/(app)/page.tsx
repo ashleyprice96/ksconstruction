@@ -10,6 +10,7 @@ import AreaChart from "@/components/AreaChart";
 import ListToolbar, { SelectAll } from "@/components/ListToolbar";
 import { claimsEnabled } from "@/lib/features";
 import HsHome from "./hs-home";
+import ShareInbox from "@/components/ShareInbox";
 
 function longDate(iso: string) {
   return new Date(iso + "T12:00:00Z").toLocaleDateString("en-GB", {
@@ -125,6 +126,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         <div className="actions">{user.role === "gang" && <Link className="btn" href="/claims/new">+ New claim</Link>}</div>
       </div>
       <Flash sp={sp} />
+      <ShareInbox userId={user.id} />
 
       {office ? (
         <>
