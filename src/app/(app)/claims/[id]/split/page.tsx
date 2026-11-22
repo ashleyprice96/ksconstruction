@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { splitScreen, submitClaim, ClaimError } from "@/lib/claims";
+import { splitScreen, submitClaim, approveEnteredClaim, ClaimError } from "@/lib/claims";
 import { addGangMember, gangMembers, MemberSplitError, type SplitRequest } from "@/lib/members";
 import { RamsRequiredError } from "@/lib/rams";
 import { claimContext, TYPE_LABEL } from "@/lib/lookups";
@@ -24,7 +24,7 @@ function readSplit(f: FormData): SplitRequest[] {
 
 async function addPerson(f: FormData) {
   "use server";
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const id = str(f, "claim_id");
   try { await addGangMember(user, str(f, "name")); }
   catch (e) { back(`/claims/${id}/split`, "error", safeMessage(e, [MemberSplitError])); }
@@ -33,18 +33,22 @@ async function addPerson(f: FormData) {
 
 async function submit(f: FormData) {
   "use server";
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const id = str(f, "claim_id");
-  try { await submitClaim(user, id, readSplit(f)); }
+  const intent = str(f, "intent");
+  try {
+    if (intent === "approve") await approveEnteredClaim(user, id, readSplit(f));
+    else await submitClaim(user, id, readSplit(f));
+  }
   catch (e) {
     if (e instanceof RamsRequiredError) redirect(`/safety/rams/${e.siteId}?next=/claims/${id}/split`);
     back(`/claims/${id}/split`, "error", safeMessage(e, [ClaimError, MemberSplitError]));
   }
-  redirect(`/claims/${id}?ok=${encodeURIComponent("Claim submitted for management sign-off.")}`);
+  redirect(`/claims/${id}?ok=${encodeURIComponent(intent === "approve" ? "Claim approved." : "Claim submitted for management sign-off.")}`);
 }
 
 export default async function Split({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const { id } = await params;
   const sp = await searchParams;
   const data = await splitScreen(user, id).catch((e) => (e instanceof ClaimError ? null : Promise.reject(e)));
@@ -79,6 +83,7 @@ export default async function Split({ params, searchParams }: { params: Promise<
         </div>
         <div className="total-line"><span>Claim total</span><span>{gbpPence(data.totalPence)}</span></div>
       </div>
+      {user.role === "gang" && (
       <form action={addPerson} className="card stack">
         <h2 style={{ marginTop: 0 }}>People in your gang</h2>
         <p className="small muted">Add each person by name. This does not create a login.</p>
@@ -89,10 +94,18 @@ export default async function Split({ params, searchParams }: { params: Promise<
         </div>
         {members.length > 0 && <p className="small" style={{ marginBottom: 0 }}>{members.map((m) => m.name).join(", ")}</p>}
       </form>
+      )}
       <form action={submit} className="card stack">
         <input type="hidden" name="claim_id" value={id} />
         <SplitForm totalPence={data.totalPence} members={members} existing={{}} disabled={data.problems.length > 0} />
-        <button className="btn" type="submit" disabled={data.problems.length > 0}>Submit claim</button>
+        {user.role === "gang" ? (
+          <button className="btn" type="submit" disabled={data.problems.length > 0}>Submit claim</button>
+        ) : (
+          <div className="actions">
+            <button className="btn" name="intent" value="submit" type="submit" disabled={data.problems.length > 0}>Submit for approval</button>
+            <button className="btn secondary" name="intent" value="approve" type="submit" disabled={data.problems.length > 0}>Approve now</button>
+          </div>
+        )}
       </form>
     </>
   );

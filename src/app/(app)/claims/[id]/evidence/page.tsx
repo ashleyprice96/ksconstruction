@@ -14,7 +14,7 @@ import { storageDriver } from "@/lib/object-store";
 
 async function upload(f: FormData) {
   "use server";
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const id = str(f, "claim_id");
   const kind = str(f, "kind");
   const files = f.getAll("files").filter((x): x is File => x instanceof File && x.size > 0);
@@ -29,7 +29,7 @@ async function upload(f: FormData) {
 
 async function saveTopSheet(f: FormData) {
   "use server";
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const id = str(f, "claim_id");
   const files = f.getAll("pages").filter((x): x is File => x instanceof File && x.size > 0);
   const blobs = blobPages(f);
@@ -40,7 +40,7 @@ async function saveTopSheet(f: FormData) {
 
 async function remove(f: FormData) {
   "use server";
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const id = str(f, "claim_id");
   try { await removeAttachment(user, id, str(f, "attachment_id")); }
   catch (e) { back(`/claims/${id}/evidence`, "error", safeMessage(e, [ClaimError])); }
@@ -50,7 +50,7 @@ async function remove(f: FormData) {
 const KIND_LABEL: Record<string, string> = { photo: "Work photos", drawing: "Foundation drawing", daywork_sheet: "Signed client daywork sheet", client_form: "Client's own form" };
 
 export default async function Evidence({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
-  const user = await requireUser(["gang"]);
+  const user = await requireUser(["gang", "management", "admin"]);
   const { id } = await params;
   const sp = await searchParams;
   const c = await loadClaim(user, id).catch(() => null);

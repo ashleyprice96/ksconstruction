@@ -5,6 +5,7 @@ import { q, q1 } from "@/lib/db";
 import { approveClaim, assignPayRun, addTopSheets, blobPages, claimEditLock, deleteBlockReason, deleteClaim, loadClaim, reduceLine, returnClaim, ClaimError } from "@/lib/claims";
 import { gangMembers, memberSplitsFor, updateMemberSplit, MemberSplitError, type SplitRequest } from "@/lib/members";
 import { claimContext, STATUS_LABEL, TYPE_LABEL } from "@/lib/lookups";
+import { unsignedRamsFor } from "@/lib/rams";
 import { back, safeMessage, str } from "@/lib/forms";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { gbp, gbpRate, toPence } from "@/lib/money";
@@ -128,6 +129,12 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
   const lastReturn = await q1<{ comment: string; created_at: string }>(
     "SELECT comment, created_at FROM ops.approvals WHERE claim_id = $1 AND action = 'return' ORDER BY created_at DESC LIMIT 1", [id]);
   const editable = user.role === "gang" && (c.status === "draft" || c.status === "returned");
+  const enteredBy = c.entered_by_user_id
+    ? await q1<{ name: string }>("SELECT name FROM ops.users WHERE id = $1", [c.entered_by_user_id])
+    : null;
+  const missingRams = c.entered_by_user_id
+    ? await unsignedRamsFor(c.created_by, c.site_id)
+    : [];
   // Gangs see their own split amounts once submitted; management sees everything gang-side.
   const showSplits = mgr || (user.role === "gang" && !editable);
   const splits = showSplits ? await q<{ name: string; legal_name: string; amount: string; original_amount: string | null }>(
@@ -156,6 +163,12 @@ export default async function ClaimPage({ params, searchParams }: { params: Prom
         </div>
       </div>
       <Flash sp={sp} />
+      {enteredBy && <p className="eyebrow" data-testid="entered-by">Entered by {enteredBy.name}{c.entered_at ? ` · ${fmtDateTime(c.entered_at)}` : ""}</p>}
+      {missingRams.length > 0 && (
+        <div className="alert warn" role="status">
+          The gang lead has not signed the current RAMS for this site: {missingRams.map((r) => `${r.title} (revision ${r.revision})`).join(", ")}. They will be asked to sign it the next time they log in.
+        </div>
+      )}
       {c.status === "returned" && lastReturn && <div className="alert warn">Returned by K-S on {fmtDateTime(lastReturn.created_at)}: {lastReturn.comment}</div>}
       {editable && (
         <div className="card accent">
